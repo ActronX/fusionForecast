@@ -1,6 +1,6 @@
 # FusionForecast
 
-FusionForecast is an ML-based tool for forecasting time series data (e.g., PV generation) using **Prophet** and **InfluxDB**. It trains a model based on historical data and external regressors (e.g., weather forecasts or Solcast) and writes the forecasts back into an InfluxDB.
+FusionForecast is an ML-based tool for forecasting time series data (e.g., PV generation) using [**Prophet**](https://facebook.github.io/prophet/) and [**InfluxDB**](https://www.influxdata.com/). It trains a model based on historical data and external regressors (e.g., weather forecasts or Solcast) and writes the forecasts back into an InfluxDB.
 
 ## Features
 
@@ -38,8 +38,6 @@ FusionForecast is an ML-based tool for forecasting time series data (e.g., PV ge
 
 ## Configuration
 
-## Configuration
-
 Configuration is managed via the `settings.toml` file.
 
 > **Initial Setup:** Before starting, rename `settings.example.toml` to `settings.toml` and fill in your credentials.
@@ -65,6 +63,30 @@ Configuration is managed via the `settings.toml` file.
 - **[open_meteo]** / **[open_meteo.historic]** / **[open_meteo.forecast]**:
     - Settings for fetching weather data (location, API URLs, models).
     - `minutely_15`: Specifies the 15-minute weather variable to fetch (e.g., `global_tilted_irradiance_instant`).
+- **[open_meteo]**:
+    - `latitude` / `longitude`: GPS coordinates of your PV system.
+    - `azimuth`: Orientation of the PV panels (0 = South, -90 = East, 90 = West).
+    - `tilt`: Tilt angle of the PV panels.
+
+## Usage Workflow
+
+### 1. Verify Connection
+
+Before proceeding, you can verify the connection to your InfluxDB instance.
+
+**Start:**
+- Windows: `test_connection.bat`
+- Linux: `./test_connection.sh`
+
+### 2. Fetch Historical Weather Data
+
+Before training the model, you must fetch historical weather data for your location to train the regressor.
+
+**Start:**
+- Windows: `fetch_historic_dwd_data.bat` or `python -m src.fetch_historic_dwd_data`
+- Linux: `./fetch_historic_dwd_data.sh` or `python3 -m src.fetch_historic_dwd_data`
+
+### 3. Train Model
 
 The training script loads historical data, trains the Prophet model, and saves it locally as a `.pkl` file.
 
@@ -72,7 +94,15 @@ The training script loads historical data, trains the Prophet model, and saves i
 - Windows: `train.bat` or `python -m src.train`
 - Linux: `./train.sh` or `python3 -m src.train`
 
-### 2. Create Forecast
+### 4. Fetch Future Weather Data
+
+Before creating a forecast, you must fetch the latest weather forecast from DWD/Open-Meteo. This data serves as the regressor for the prediction.
+
+**Start:**
+- Windows: `update_dwd_data.bat` or `python -m src.update_dwd_data`
+- Linux: `./update_dwd_data.sh` or `python3 -m src.update_dwd_data`
+
+### 5. Create Forecast
 
 The forecast script loads the saved model and future regressor data (e.g., weather forecast), calculates the forecast, and writes it to InfluxDB.
 
@@ -80,7 +110,7 @@ The forecast script loads the saved model and future regressor data (e.g., weath
 - Windows: `forecast.bat` or `python -m src.forecast`
 - Linux: `./forecast.sh` or `python3 -m src.forecast`
 
-### 3. Run Pipeline (Train + Forecast)
+### 6. Run Pipeline (Train + Forecast)
 
 Executes both sequentially.
 
@@ -88,7 +118,7 @@ Executes both sequentially.
 - Windows: `run_pipeline.bat`
 - Linux: `./run_pipeline.sh`
 
-### 4. Consumption Forecasting
+### 7. Consumption Forecasting (optional)
 
 A separate pipeline exists for forecasting electricity consumption (without external regressors, purely based on history and seasonality).
 
@@ -103,9 +133,16 @@ A separate pipeline exists for forecasting electricity consumption (without exte
 - Windows: `train_consumption.bat`
 - Linux: `./train_consumption.sh`
 
-**Start Forecast:**
 - Windows: `forecast_consumption.bat`
 - Linux: `./forecast_consumption.sh`
+
+### 8. Hyperparameter Tuning
+
+To optimize the model's accuracy, you can tune the hyperparameters (e.g., `changepoint_prior_scale`, `seasonality_mode`) using a grid search. The parameters to be tested are defined in `settings.toml` under `[prophet.tuning]`.
+
+**Start:**
+- Windows: `tune.bat` or `python -m src.tune`
+- Linux: `./tune.sh` or `python3 -m src.tune`
 
 ## Folder Structure
 
