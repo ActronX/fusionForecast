@@ -37,7 +37,13 @@ FusionForecast is an ML-based tool for forecasting time series data (e.g., PV ge
 
 ## Configuration
 
-Configuration is managed via the `settings.toml` file. **This file is fully documented with comments for every setting.** Please refer to it for detailed explanations of all parameters.
+## Configuration
+
+Configuration is managed via the `settings.toml` file.
+
+> **Initial Setup:** Before starting, rename `settings.example.toml` to `settings.toml` and fill in your credentials.
+
+**This file is fully documented with comments for every setting.** Please refer to it for detailed explanations of all parameters.
 
 ### Important Settings Sections
 
