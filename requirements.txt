@@ -1,0 +1,9 @@
+prophet>=1.1
+pandas>=2.0
+influxdb-client>=1.36
+dynaconf>=3.2
+tomli>=2.0; python_version < "3.11"
+plotly>=5.0
+openmeteo-requests
+requests-cache
+retry-requests

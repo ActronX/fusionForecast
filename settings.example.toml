@@ -1,0 +1,192 @@
+# InfluxDB Connection Settings
+# Replace with your actual InfluxDB credentials and details.
+# This file should be git-ignored and managed via a secret management system in production.
+
+[influxdb]
+# URL of the InfluxDB instance (e.g., http://localhost:8086)
+url = "http://localhost:8086"
+# API Token for authentication (requires read/write permissions for the specified buckets)
+token = "YOUR_INFLUXDB_TOKEN_HERE"  # Replace with your InfluxDB API Token
+# Organization name in InfluxDB
+org = "your_org"              # Replace with your InfluxDB Organization
+
+[buckets]
+# Bucket containing historical production data (PV generation) for training
+b_history_produced = "sonnen_stats"
+
+# Bucket containing historical consumption data (household usage) for training
+b_history_consumption = "sonnen_stats"
+
+# Bucket containing historical regressor data (e.g., historical weather forecasts/measurements)
+b_regressor_history = "dwdForecast"
+#b_regressor_history = "forecast"
+
+# Bucket containing future regressor data (e.g., weather forecasts) for prediction
+b_regressor_future = "dwdForecast"  
+#b_regressor_future = "home"  
+
+# Bucket where the generated production forecasts will be written
+b_target_forecast = "fusionForecastData"
+# Bucket where the generated consumption forecasts will be written
+b_target_consumption = "fusionForecastData"
+
+# Bucket where fetched historical DWD weather data is stored
+b_dwd_historic = "dwdForecast"
+
+
+[measurements]
+# Measurement name for production data (PV)
+m_produced = "pv"
+# Measurement name for consumption data
+m_consumption = "pv"
+# Measurement name for historical regressor data
+m_regressor_history = "icon_d2"
+# Measurement name for future regressor data
+m_regressor_future = "icon_d2"      
+# Measurement name for the output production forecast
+m_forecast = "dwd"
+# Measurement name for the output consumption forecast
+m_consumption_forecast = "m_consumption_forecast"
+# Measurement name for fetched DWD historic data
+m_dwd_historic = "icon_d2"
+
+
+[fields]
+# Field name for produced energy/power
+f_produced = "generatedWh"
+# Field name for consumed energy/power
+f_consumption = "houseWh"
+
+# Field name for historical regressor value (Irradiance)
+f_regressor_history = "global_tilted_irradiance"
+# Field name for future regressor value (Irradiance)
+f_regressor_future = "global_tilted_irradiance"         
+# Field name for the output production forecast value
+f_forecast = "global_tilted_irradiance"
+# Field name for fetched DWD historic data
+f_dwd_historic = "global_tilted_irradiance"
+# Field name for the output consumption forecast value
+f_consumption_forecast = "consumption_forecast"
+
+
+[model]
+# Path to store the serialized Prophet model for production
+model_path = "models/prophet_model.pkl"
+# Path to store the serialized Prophet model for consumption
+model_path_consumption = "models/prophet_model_consumption.pkl"
+
+[forecast_parameters]
+# Number of days of historical data to use for training (e.g., 731 = 2 years + 1 day)
+training_days = 731
+# specific horizon for the forecast in days (how far ahead to predict)
+forecast_days = 3
+
+
+
+[preprocessing]
+# Maximum allowed value for power/energy data; values above this are clipped
+max_power_clip = 6000
+# Multiplier for produced data (e.g., 1000.0 to convert kW to W, or 0.001 for W to kW)
+produced_scale = 1000.0
+# Multiplier for consumption data
+consumption_scale = 1.0
+# Multiplier for regressor data (normalization or unit conversion)
+regressor_scale = 1.0
+# Time offset applied to regressor data (e.g. "-1h" shifts data back 1 hour). "0m" for no offset.
+regressor_offset = "0m"
+# Time offset applied to produced data before training. "0m" for no offset.
+produced_offset = "-30m"
+# Time offset applied to the final forecast timestamps. "0m" for no offset.
+forecast_offset = "0m"
+
+
+[prophet]
+# --- Production Model Settings ---
+# influence of the external regressor on the model (Higher = stronger influence)
+regressor_prior_scale = 5.0 
+# Flexibility of the trend component (Higher = more flexible, Lower = smoother)
+# Tuned value: 0.001 - Very stiff trend (avoids overfitting to short-term changes)
+changepoint_prior_scale = 0.001
+# Flexibility of the seasonality component (Higher = more flexible/complex seasonality)
+seasonality_prior_scale = 1.0 
+# Mode for seasonality: "additive" (constant amplitude) or "multiplicative" (amplitude changes with trend)
+seasonality_mode = "additive"
+# Mode for regressor impact: "additive" or "multiplicative"
+regressor_mode = "additive"
+# Enable yearly seasonality (only if >1 year of data available)
+yearly_seasonality = true
+
+[prophet.consumption]
+# --- Consumption Model Settings ---
+# Enable daily seasonality (pattern repeats every day)
+daily_seasonality = true
+# Enable weekly seasonality (pattern repeats every week, e.g., weekends vs weekdays)
+weekly_seasonality = true
+# Enable yearly seasonality (pattern repeats every year)
+yearly_seasonality = true
+# Seasonality mode for consumption (often "multiplicative" as usage scales with base load)
+seasonality_mode = "multiplicative"
+# Trend flexibility for consumption (0.05 is default, allows moderate flexibility)
+changepoint_prior_scale = 0.05 
+# Seasonality flexibility for consumption
+seasonality_prior_scale = 1.0
+# Strength of holiday effects (if holidays are used)
+holidays_prior_scale = 10.0
+# Override training days for consumption (optional, commented out)
+# training_days = 180 
+
+[prophet.tuning]
+# --- Hyperparameter Tuning Settings ---
+# Number of CPU cores to use for parallel tuning jobs
+process_count = 6
+# Threshold value (in Watts) to ignore/filter out night values during evaluation
+night_threshold = 50
+
+# Parameter grid for 'changepoint_prior_scale'
+changepoint_prior_scale = [0.001, 0.01, 0.1]
+# Parameter grid for 'seasonality_prior_scale'
+seasonality_prior_scale = [0.1, 1.0, 10.0]
+# Parameter grid for 'regressor_prior_scale'
+regressor_prior_scale = [0.1, 0.5, 1.0, 3.0, 5.0]
+
+# Parameter grid for 'regressor_mode'
+regressor_mode = ["additive", "multiplicative"]
+# Parameter grid for 'seasonality_mode'
+seasonality_mode = ["additive", "multiplicative"]
+
+[open_meteo]
+# --- Open-Meteo API Shared Settings ---
+# Latitude of the location
+latitude = 52.5200
+# Longitude of the location
+longitude = 13.4050
+# Tilt angle of the solar panels (degrees)
+tilt = 30
+# Azimuth angle of the solar panels (degrees, 0 = South or North depending on convention, Open-Meteo uses 0=South?) check docs
+# Open-Meteo: 0=South, -90=East, 90=West. 180=North.
+azimuth = 0
+
+
+[open_meteo.historic]
+# --- Historic Data Fetch Settings ---
+# API Endpoint for historical forecast data
+url = "https://historical-forecast-api.open-meteo.com/v1/forecast"
+# Start date for fetching historical data (YYYY-MM-DD)
+start_date = "2023-01-01"
+# End date for fetching historical data (YYYY-MM-DD)
+end_date = "2023-12-31"
+# Weather models to use (e.g., "icon_d2", "best_match")
+models = "icon_d2"
+# 15-minute variable to fetch
+minutely_15 = "global_tilted_irradiance_instant"
+
+[open_meteo.forecast]
+# --- Future Forecast Fetch Settings ---
+# API Endpoint for current forecast data
+url = "https://api.open-meteo.com/v1/forecast"
+# Number of days to forecast into the future
+forecast_days = 3
+# Weather models to use
+models = "icon_d2"
+# 15-minute variable to fetch
+minutely_15 = "global_tilted_irradiance_instant"
