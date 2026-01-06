@@ -15,6 +15,7 @@ FusionForecast is an ML-based tool for forecasting time series data (e.g., PV ge
 - Python 3.9+
 - InfluxDB v2
 - Access to relevant InfluxDB buckets
+- **Historical PV Data:** At least 30 days of historical generation data are required for training. Ideally, 1 to 2 years of data should be available for better accuracy.
 
 ## Installation
 
@@ -84,7 +85,6 @@ The forecast script loads the saved model and future regressor data (e.g., weath
 Executes both sequentially.
 
 **Start:**
-- Windows: `run_pipeline.bat`
 - Windows: `run_pipeline.bat`
 - Linux: `./run_pipeline.sh`
 
