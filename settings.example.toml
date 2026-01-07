@@ -60,7 +60,7 @@ forecast_days = 3
 
 
 [preprocessing]
-# Maximum allowed value for power/energy data; values above this are clipped
+# Maximum allowed value for power/energy data (Physical maximum of PV system/Inverter); values above this are clipped
 max_power_clip = 6000
 # Multiplier for produced data (e.g., 1000.0 to convert kW to W, or 0.001 for W to kW)
 produced_scale = 1000.0
