@@ -74,7 +74,7 @@ def run_forecast():
          print(f"  > Requested Horizon: {forecast_days} days")
          print(f"  > Available: {available_days:.2f} days")
          print("  > Threshold: 50% of requested horizon required.")
-         print("  > Hint: Please run 'update_future_weather' to fetch more forecast data.")
+         print("  > Hint: Please run 'fetch_future_weather' to fetch more forecast data.")
          return
 
     # Create Future DataFrame

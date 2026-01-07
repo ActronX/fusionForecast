@@ -10,7 +10,7 @@ else
 fi
 
 echo "Running Regressor/Future Weather data updater..."
-python3 -m src.update_future_weather
+python3 -m src.fetch_future_weather
 if [ $? -ne 0 ]; then
     echo "Execution failed with error code $?"
     exit $?

@@ -9,7 +9,7 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from src.train import train_model
 from src.forecast import run_forecast
 import src.fetch_historic_weather
-import src.update_future_weather
+import src.fetch_future_weather
 import test_connection
 
 def main():
@@ -33,9 +33,9 @@ def main():
         print(f"Error fetching historic weather: {e}")
         # We continue, assuming it might not be critical or let user see error
 
-    print("\n--- Step 3: Update Future Weather ---")
+    print("\n--- Step 3: Fetch Future Weather ---")
     try:
-        src.update_future_weather.main()
+        src.fetch_future_weather.main()
     except Exception as e:
         print(f"Error updating future weather: {e}")
 
