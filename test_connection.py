@@ -26,13 +26,12 @@ def test_connection():
         
         
         # Define the mapping of logical names to their config keys
+        # Define the mapping of logical names to their config keys
         config_map = [
             ("Production History", "b_history_produced", "m_produced", "f_produced", "Training: PV yield (Input)"),
-            ("Consumption History", "b_history_consumption", "m_consumption", "f_consumption", "Training: Consumption (Input)"),
             ("Regressor History", "b_regressor_history", "m_regressor_history", "f_regressor_history", "Training: Weather (Input/Aligned)"),
             ("Regressor Future", "b_regressor_future", "m_regressor_future", "f_regressor_future", "Forecast: Weather (Input)"),
             ("Target Forecast (PV)", "b_target_forecast", "m_forecast", "f_forecast", "Output: PV Forecast (Result)"),
-            ("Target Forecast (Cons)", "b_target_consumption", "m_consumption_forecast", "f_consumption_forecast", "Output: Cons. Forecast (Result)"),
         ]
 
         expected_buckets = set()

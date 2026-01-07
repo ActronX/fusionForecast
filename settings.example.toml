@@ -14,9 +14,6 @@ org = "your_org"              # Replace with your InfluxDB Organization
 # Bucket containing historical production data (PV generation) for training
 b_history_produced = "energy_data"
 
-# Bucket containing historical consumption data (household usage) for training
-b_history_consumption = "energy_data"
-
 # Bucket containing historical regressor data (e.g., historical weather forecasts/measurements)
 b_regressor_history = "weather_data"
 
@@ -25,32 +22,22 @@ b_regressor_future = "weather_data"
 
 # Bucket where the generated production forecasts will be written
 b_target_forecast = "forecast_results"
-# Bucket where the generated consumption forecasts will be written
-b_target_consumption = "forecast_results"
-
-
 
 
 [measurements]
 # Measurement name for production data (PV)
 m_produced = "energy_meter"
-# Measurement name for consumption data
-m_consumption = "energy_meter"
 # Measurement name for historical regressor data
 m_regressor_history = "weather"
 # Measurement name for future regressor data
 m_regressor_future = "weather"      
 # Measurement name for the output production forecast
 m_forecast = "production_forecast"
-# Measurement name for the output consumption forecast
-m_consumption_forecast = "consumption_forecast"
 
 
 [fields]
 # Field name for produced energy/power
 f_produced = "power_produced"
-# Field name for consumed energy/power
-f_consumption = "power_consumed"
 
 # Field name for historical regressor value (Irradiance)
 f_regressor_history = "irradiance"
@@ -58,15 +45,11 @@ f_regressor_history = "irradiance"
 f_regressor_future = "irradiance"         
 # Field name for the output production forecast value
 f_forecast = "power_produced_forecast"
-# Field name for the output consumption forecast value
-f_consumption_forecast = "power_consumed_forecast"
 
 
 [model]
 # Path to store the serialized Prophet model for production
 model_path = "models/prophet_model.pkl"
-# Path to store the serialized Prophet model for consumption
-model_path_consumption = "models/prophet_model_consumption.pkl"
 
 [forecast_parameters]
 # Number of days of historical data to use for training (e.g., 731 = 2 years + 1 day)
@@ -81,8 +64,6 @@ forecast_days = 3
 max_power_clip = 6000
 # Multiplier for produced data (e.g., 1000.0 to convert kW to W, or 0.001 for W to kW)
 produced_scale = 1000.0
-# Multiplier for consumption data
-consumption_scale = 1.0
 # Multiplier for regressor data (normalization or unit conversion)
 regressor_scale = 1.0
 # Time offset applied to regressor data (e.g. "-1h" shifts data back 1 hour). "0m" for no offset.
@@ -109,24 +90,6 @@ regressor_mode = "additive"
 # Enable yearly seasonality (only if >1 year of data available)
 yearly_seasonality = true
 
-[prophet.consumption]
-# --- Consumption Model Settings ---
-# Enable daily seasonality (pattern repeats every day)
-daily_seasonality = true
-# Enable weekly seasonality (pattern repeats every week, e.g., weekends vs weekdays)
-weekly_seasonality = true
-# Enable yearly seasonality (pattern repeats every year)
-yearly_seasonality = true
-# Seasonality mode for consumption (often "multiplicative" as usage scales with base load)
-seasonality_mode = "multiplicative"
-# Trend flexibility for consumption (0.05 is default, allows moderate flexibility)
-changepoint_prior_scale = 0.05 
-# Seasonality flexibility for consumption
-seasonality_prior_scale = 1.0
-# Strength of holiday effects (if holidays are used)
-holidays_prior_scale = 10.0
-# Override training days for consumption (optional, commented out)
-# training_days = 180 
 
 [prophet.tuning]
 # --- Hyperparameter Tuning Settings ---

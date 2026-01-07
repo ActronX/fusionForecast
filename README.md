@@ -60,8 +60,7 @@ Configuration is managed via the `settings.toml` file.
 - **[prophet]**:
     - `regressor_prior_scale`: Prior scale for the regressor (controls flexibility).
     - `seasonality_mode` / `regressor_mode`: Additive or Multiplicative.
-- **[prophet.consumption]**:
-    - Specific settings for the consumption model (e.g., `daily_seasonality`, `weekly_seasonality`).
+
 - **[open_meteo]** / **[open_meteo.historic]** / **[open_meteo.forecast]**:
     - Settings for fetching weather data (location, API URLs, models).
     - `minutely_15`: Specifies the 15-minute weather variable to fetch (e.g., `global_tilted_irradiance_instant`).
@@ -125,25 +124,7 @@ Executes the complete workflow in order:
 - Windows: `run_pipeline.bat`
 - Linux: `./run_pipeline.sh`
 
-### 7. Consumption Forecasting (optional)
-
-A separate pipeline exists for forecasting electricity consumption (without external regressors, purely based on history and seasonality).
-
-**Features:**
-- Predicts consumption based on historical patterns (daily, weekly, yearly seasonality).
-- **Holidays**: Automatically integrates holidays for **Germany/Bavaria (DE-BY)**:
-    - **Public Holidays**: Using `holidays` library.
-    - **School Holidays**: Fetched dynamically from `ferien-api.de`.
-- Configurable via `[prophet.consumption]` in `settings.toml`.
-
-**Start Training:**
-- Windows: `train_consumption.bat`
-- Linux: `./train_consumption.sh`
-
-- Windows: `forecast_consumption.bat`
-- Linux: `./forecast_consumption.sh`
-
-### 8. Hyperparameter Tuning
+### 7. Hyperparameter Tuning
 
 To optimize the model's accuracy, you can tune the hyperparameters (e.g., `changepoint_prior_scale`, `seasonality_mode`) using a grid search. The parameters to be tested are defined in `settings.toml` under `[prophet.tuning]`.
 
@@ -166,8 +147,6 @@ Here is a detailed description of the Python scripts located in `src/`:
 ### Core Pipeline
 - **`src/train.py`**: Trains the **Production** (PV) model. Fetches historical production and regressor data, trains Prophet, and saves `prophet_model.pkl`.
 - **`src/forecast.py`**: Generates **Production** forecasts. Loads the model, fetches future weather data, predicts generation, and writes to InfluxDB.
-- **`src/train_consumption.py`**: Trains the **Consumption** model. Uses historical consumption data and holidays (Public & School) to train `prophet_model_consumption.pkl`.
-- **`src/forecast_consumption.py`**: Generates **Consumption** forecasts. Similar to `forecast.py` but for household usage.
 
 ### Data Fetching
 - **`src/update_future_weather.py`**: Fetches **current** weather forecasts from Open-Meteo (DWD ICON-D2) for the next few days and stores them in InfluxDB (used for forecasting).
@@ -185,21 +164,20 @@ Here is a detailed description of the Python scripts located in `src/`:
 This section describes which data is read from and written to InfluxDB, and why this is necessary.
 
 ### 1. Training (Model Creation)
-*Scripts: `src/train.py`, `src/train_consumption.py`*
+*Scripts: `src/train.py`*
 
 - **Reads**:
     - **Production History** (`b_history_produced`): Actual historical PV generation data.
-    - **Consumption History** (`b_history_consumption`): Actual historical household electricity usage.
     - **Regressor History** (`b_regressor_history`): Historical weather data (e.g., solar irradiance) corresponding to the production history.
-- **Why**: The Prophet model needs to learn the relationship between the target variable (Production/Consumption) and time/weather. For example, it learns that "high irradiance = high production" or "Monday morning = high consumption".
+- **Why**: The Prophet model needs to learn the relationship between the target variable (Production) and time/weather. For example, it learns that "high irradiance = high production".
 
 ### 2. Forecasting (Prediction)
-*Scripts: `src/forecast.py`, `src/forecast_consumption.py`*
+*Scripts: `src/forecast.py`*
 
 - **Reads**:
     - **Future Regressor** (`b_regressor_future`): The current weather forecast for the next few days.
 - **Writes**:
-    - **Target Forecast** (`b_target_forecast`, `b_target_consumption`): The predicted values for production and consumption.
+    - **Target Forecast** (`b_target_forecast`): The predicted values for production.
 - **Why**: To make a prediction for tomorrow, the model needs to know the expected weather (Regressor). The result is then stored so it can be visualized in Grafana or used by an energy management system (e.g., to charge a battery).
 
 ### 3. Data Fetching (External Sources)
@@ -229,12 +207,8 @@ Add the following lines (adjust `/path/to/fusionForecast` to your installation p
 # Train the model every day at 03:00 AM
 0 3 * * * /path/to/fusionForecast/train.sh >> /path/to/fusionForecast/logs/train.log 2>&1
 
-# Train consumption model every day at 03:30 AM
-30 3 * * * /path/to/fusionForecast/train_consumption.sh >> /path/to/fusionForecast/logs/train_consumption.log 2>&1
-
 # Create a forecast every hour
 0 * * * * /path/to/fusionForecast/forecast.sh >> /path/to/fusionForecast/logs/forecast.log 2>&1
-0 * * * * /path/to/fusionForecast/forecast_consumption.sh >> /path/to/fusionForecast/logs/forecast_consumption.log 2>&1
 ```
 
 Ensure the scripts are executable (`chmod +x *.sh`) and the path is absolute.
