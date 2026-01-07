@@ -85,8 +85,8 @@ Before proceeding, you can verify the connection to your InfluxDB instance.
 Before training the model, you must fetch historical weather data for your location to train the regressor.
 
 **Start:**
-- Windows: `fetch_historic_dwd_data.bat` or `python -m src.fetch_historic_dwd_data`
-- Linux: `./fetch_historic_dwd_data.sh` or `python3 -m src.fetch_historic_dwd_data`
+- Windows: `fetch_historic_weather.bat` or `python -m src.fetch_historic_weather`
+- Linux: `./fetch_historic_weather.sh` or `python3 -m src.fetch_historic_weather`
 
 ### 3. Train Model
 
@@ -101,8 +101,8 @@ The training script loads historical data, trains the Prophet model, and saves i
 Before creating a forecast, you must fetch the latest weather forecast from DWD/Open-Meteo. This data serves as the regressor for the prediction.
 
 **Start:**
-- Windows: `update_dwd_data.bat` or `python -m src.update_dwd_data`
-- Linux: `./update_dwd_data.sh` or `python3 -m src.update_dwd_data`
+- Windows: `update_future_weather.bat` or `python -m src.update_future_weather`
+- Linux: `./update_future_weather.sh` or `python3 -m src.update_future_weather`
 
 ### 5. Create Forecast
 
@@ -112,9 +112,14 @@ The forecast script loads the saved model and future regressor data (e.g., weath
 - Windows: `forecast.bat` or `python -m src.forecast`
 - Linux: `./forecast.sh` or `python3 -m src.forecast`
 
-### 6. Run Pipeline (Train + Forecast)
+### 6. Run Pipeline (Full Automation)
 
-Executes both sequentially.
+Executes the complete workflow in order:
+1. **Connection Test**: Checks InfluxDB health.
+2. **Fetch Historic Weather**: Updates historic data.
+3. **Fetch Future Weather**: Updates forecast data.
+4. **Train Model**: Retrains the model.
+5. **Create Forecast**: Generates the forecast.
 
 **Start:**
 - Windows: `run_pipeline.bat`
@@ -165,8 +170,8 @@ Here is a detailed description of the Python scripts located in `src/`:
 - **`src/forecast_consumption.py`**: Generates **Consumption** forecasts. Similar to `forecast.py` but for household usage.
 
 ### Data Fetching
-- **`src/update_dwd_data.py`**: Fetches **current** weather forecasts from Open-Meteo (DWD ICON-D2) for the next few days and stores them in InfluxDB (used for forecasting).
-- **`src/fetch_historic_dwd_data.py`**: Fetches **historical** weather data from Open-Meteo for the past (used for training the regressor).
+- **`src/update_future_weather.py`**: Fetches **current** weather forecasts from Open-Meteo (DWD ICON-D2) for the next few days and stores them in InfluxDB (used for forecasting).
+- **`src/fetch_historic_weather.py`**: Fetches **historical** weather data from Open-Meteo for the past (used for training the regressor).
 
 ### Utilities & Maintenance
 - **`src/evaluate.py`**: Calculates error metrics (RMSE, MAE, MAPE) by comparing past forecasts with actual values. helpful for checking model performance.
@@ -199,7 +204,7 @@ This section describes which data is read from and written to InfluxDB, and why 
 - **Why**: To make a prediction for tomorrow, the model needs to know the expected weather (Regressor). The result is then stored so it can be visualized in Grafana or used by an energy management system (e.g., to charge a battery).
 
 ### 3. Data Fetching (External Sources)
-*Scripts: `src/update_dwd_data.py`, `src/fetch_historic_dwd_data.py`*
+*Scripts: `src/update_future_weather.py`, `src/fetch_historic_weather.py`*
 
 - **Writes**:
     - **Historic Weather** (`b_regressor_history`): Stores historical weather data fetched from Open-Meteo.
@@ -219,8 +224,8 @@ crontab -e
 Add the following lines (adjust `/path/to/fusionForecast` to your installation path):
 
 ```cron
-# Update DWD Weather Data (e.g. every hour at minute 15)
-15 * * * * /path/to/fusionForecast/update_dwd_data.sh >> /path/to/fusionForecast/logs/update_dwd.log 2>&1
+# Update Future Weather Data (e.g. every hour at minute 15)
+15 * * * * /path/to/fusionForecast/update_future_weather.sh >> /path/to/fusionForecast/logs/update_future_weather.log 2>&1
 
 # Train the model every day at 03:00 AM
 0 3 * * * /path/to/fusionForecast/train.sh >> /path/to/fusionForecast/logs/train.log 2>&1

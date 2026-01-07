@@ -9,8 +9,8 @@ else
     echo "Warning: venv not found. Using system python."
 fi
 
-echo "Running DWD data updater..."
-python3 -m src.update_dwd_data
+echo "Running historic Regressor/Weather data fetcher..."
+python3 -m src.fetch_historic_weather
 if [ $? -ne 0 ]; then
     echo "Execution failed with error code $?"
     exit $?

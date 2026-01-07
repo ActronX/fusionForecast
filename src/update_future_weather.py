@@ -1,5 +1,5 @@
 """
-Script to fetch historic DWD weather data from Open-Meteo and store it in InfluxDB.
+Script to fetch forecast weather data from Open-Meteo and store it in InfluxDB.
 """
 
 import openmeteo_requests
@@ -11,35 +11,35 @@ from src.db import InfluxDBWrapper
 from influxdb_client import Point
 from influxdb_client.client.write_api import SYNCHRONOUS
 
-def fetch_weather_data():
-    """Fetches weather data from Open-Meteo API based on settings."""
+def fetch_forecast_data():
+    """Fetches forecast data from Open-Meteo API based on settings."""
     
-    # Setup the Open-Meteo API client with cache and retry on error
+    # Setup the Open-Meteo API client
     cache_session = requests_cache.CachedSession('.cache', expire_after=3600)
     retry_session = retry(cache_session, retries=5, backoff_factor=0.2)
     openmeteo = openmeteo_requests.Client(session=retry_session)
 
-    # Get Open-Meteo parameters from settings
+    # Get Open-Meteo Forecast parameters from settings
+    # We expect a [open_meteo] section with a [open_meteo.forecast] subtable
     if 'open_meteo' not in settings:
         print("Error: '[open_meteo]' section missing in settings.toml")
         return pd.DataFrame()
 
     om_settings = settings['open_meteo']
-    om_historic = om_settings.get('historic', {})
+    om_forecast = om_settings.get('forecast', {})
     
-    url = om_historic.get('url', "https://historical-forecast-api.open-meteo.com/v1/forecast")
+    url = om_forecast.get('url', "https://api.open-meteo.com/v1/forecast")
     params = {
         "latitude": om_settings['latitude'],
         "longitude": om_settings['longitude'],
-        "start_date": om_historic['start_date'],
-        "end_date": om_historic['end_date'],
-        "minutely_15": om_historic.get('minutely_15', "global_tilted_irradiance_instant"),
-        "models": om_historic.get('models', 'icon_d2'),
-        "tilt": om_settings['tilt'], 
-        "azimuth": om_settings['azimuth']
+        "minutely_15": om_forecast.get('minutely_15', "global_tilted_irradiance_instant"),
+        "models": om_forecast.get('models', 'best_match'),
+        "tilt": om_settings['tilt'],
+        "azimuth": om_settings['azimuth'],
+        "forecast_days": om_forecast.get('forecast_days', 3)
     }
 
-    print(f"Requesting data from {url} with params: {params}")
+    print(f"Requesting forecast data from {url} with params: {params}")
     responses = openmeteo.weather_api(url, params=params)
     
     # Process first location (only one requested)
@@ -50,7 +50,7 @@ def fetch_weather_data():
     minutely_15 = response.Minutely15()
     
     # Verify variable exists
-    # Assuming single variable 'global_tilted_irradiance_instant' mapped to 'global_tilted_irradiance'
+    # Assuming single variable requested for minutely_15
     minutely_15_values = minutely_15.Variables(0).ValuesAsNumpy()
 
     minutely_15_data = {
@@ -60,30 +60,30 @@ def fetch_weather_data():
             freq=pd.Timedelta(seconds=minutely_15.Interval()),
             inclusive="left"
         ),
-        "global_tilted_irradiance": minutely_15_values
+        "global_tilted_irradiance": minutely_15_values 
         # Note: We map minutely_15 values to 'global_tilted_irradiance' 
         # to match the field name expected by the rest of the pipeline.
     }
 
     df = pd.DataFrame(data=minutely_15_data)
     
-    # Clean data
+    # Clean data (usually forecasts shouldn't have NaNs but good practice)
     original_len = len(df)
     df.dropna(inplace=True)
     dropped_count = original_len - len(df)
     if dropped_count > 0:
         print(f"Dropped {dropped_count} rows with NaNs.")
         
-    print(f"Fetched {len(df)} valid data points.")
+    print(f"Fetched {len(df)} valid forecast points.")
     return df
 
 def write_to_influx(df):
-    """Writes the dataframe to InfluxDB."""
+    """Writes the dataframe to InfluxDB using same keys as historic fetcher."""
     
 
-    bucket = settings['buckets']['b_regressor_history']
-    measurement = settings['measurements']['m_regressor_history']
-    field = settings['fields']['f_regressor_history']
+    bucket = settings['buckets']['b_regressor_future']
+    measurement = settings['measurements']['m_regressor_future']
+    field = settings['fields']['f_regressor_future']
     
     db_wrapper = InfluxDBWrapper()
     write_api = db_wrapper.client.write_api(write_options=SYNCHRONOUS)
@@ -104,18 +104,16 @@ def write_to_influx(df):
     print("Successfully wrote data to InfluxDB.")
 
 def main():
-    print("Starting historic DWD data fetch...")
+    print("Starting Future Weather (Forecast) data fetch...")
 
     # Configuration Check
-    required_keys = ['b_regressor_history', 'm_regressor_history', 'f_regressor_history']
-    if any(k not in settings.get('buckets', {}) for k in ['b_regressor_history']) or \
-       any(k not in settings.get('measurements', {}) for k in ['m_regressor_history']) or \
-       any(k not in settings.get('fields', {}) for k in ['f_regressor_history']):
-         print("Error: Missing required InfluxDB settings in settings.toml.")
+    required_keys = ['b_regressor_future', 'm_regressor_future', 'f_regressor_future']
+    if any(k not in settings.get('buckets', {}) for k in ['b_regressor_future']):
+         print("Error: Missing 'b_regressor_future' in settings.")
          return
 
     try:
-        df = fetch_weather_data()
+        df = fetch_forecast_data()
         if not df.empty:
             write_to_influx(df)
         else:

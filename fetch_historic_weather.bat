@@ -9,8 +9,8 @@ if exist "venv\Scripts\activate.bat" (
     echo Warning: venv not found. Using system python.
 )
 
-echo Running DWD data updater...
-python -m src.update_dwd_data
+echo Running historic Regressor/Weather data fetcher...
+python -m src.fetch_historic_weather
 if %ERRORLEVEL% NEQ 0 (
     echo Execution failed with error code %ERRORLEVEL%
     pause
