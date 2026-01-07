@@ -132,6 +132,22 @@ To optimize the model's accuracy, you can tune the hyperparameters (e.g., `chang
 - Windows: `tune.bat` or `python -m src.tune`
 - Linux: `./tune.sh` or `python3 -m src.tune`
 
+#### Evaluation Metrics
+
+The tuning script evaluates model performance using Cross-Validation and calculates the following metrics. **Note**: To ensure relevance for PV systems, values below the `night_threshold` (defined in settings, e.g., 50 W) are **excluded** from these calculations. This prevents the metrics from being artificially improved by easy "0 Watt" predictions during the night.
+
+*   **RMSE (Root Mean Squared Error)**:
+    *   **What it is**: The square root of the average squared differences between incorrect forecasts and actual values.
+    *   **PV Context**: RMSE penalizes **large errors** more heavily than small ones. This is critical for battery management: a single large prediction error (e.g., predicting 5kW when it's 2kW) can disrupt your charging strategy more than many small errors. A lower RMSE means fewer "big surprises".
+
+*   **MAE (Mean Absolute Error)**:
+    *   **What it is**: The average absolute difference between the forecast and the actual value.
+    *   **PV Context**: This tells you, on average, how many Watts your forecast is off. It gives a linear representation of error and is easy to interpret. If MAE is 500W, your forecast is on average 500W deviation from reality.
+
+*   **MAPE (Mean Absolute Percentage Error)**:
+    *   **What it is**: The average error expressed as a percentage of the actual value.
+    *   **PV Context**: Useful for understanding relative performance. A 10% MAPE means the model is usually within 10% of the actual generation. However, be cautious: MAPE can be erratic when production is very low (near the threshold), which is why filtering night values is crucial.
+
 ## Folder Structure
 
 - `src/`: Source code (Python scripts).
