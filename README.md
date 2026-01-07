@@ -102,8 +102,8 @@ The training script loads historical data, trains the Prophet model, and saves i
 Before creating a forecast, you must fetch the latest weather forecast from DWD/Open-Meteo. This data serves as the regressor for the prediction.
 
 **Start:**
-- Windows: `update_future_weather.bat` or `python -m src.update_future_weather`
-- Linux: `./update_future_weather.sh` or `python3 -m src.update_future_weather`
+- Windows: `fetch_future_weather.bat` or `python -m src.fetch_future_weather`
+- Linux: `./fetch_future_weather.sh` or `python3 -m src.fetch_future_weather`
 
 ### 5. Create Forecast
 
@@ -167,7 +167,7 @@ Here is a detailed description of the Python scripts located in `src/`:
 - **`src/forecast.py`**: Generates **Production** forecasts. Loads the model, fetches future weather data, predicts generation, and writes to InfluxDB.
 
 ### Data Fetching
-- **`src/update_future_weather.py`**: Fetches **current** weather forecasts from Open-Meteo (DWD ICON-D2) for the next few days and stores them in InfluxDB (used for forecasting).
+- **`src/fetch_future_weather.py`**: Fetches **current** weather forecasts from Open-Meteo (DWD ICON-D2) for the next few days and stores them in InfluxDB (used for forecasting).
 - **`src/fetch_historic_weather.py`**: Fetches **historical** weather data from Open-Meteo for the past (used for training the regressor).
 
 ### Utilities & Maintenance
@@ -199,7 +199,7 @@ This section describes which data is read from and written to InfluxDB, and why 
 - **Why**: To make a prediction for tomorrow, the model needs to know the expected weather (Regressor). The result is then stored so it can be visualized in Grafana or used by an energy management system (e.g., to charge a battery).
 
 ### 3. Data Fetching (External Sources)
-*Scripts: `src/update_future_weather.py`, `src/fetch_historic_weather.py`*
+*Scripts: `src/fetch_future_weather.py`, `src/fetch_historic_weather.py`*
 
 - **Writes**:
     - **Historic Weather** (`b_regressor_history`): Stores historical weather data fetched from Open-Meteo.
@@ -219,8 +219,8 @@ crontab -e
 Add the following lines (adjust `/path/to/fusionForecast` to your installation path):
 
 ```cron
-# Update Future Weather Data (e.g. every hour at minute 15)
-15 * * * * /path/to/fusionForecast/update_future_weather.sh >> /path/to/fusionForecast/logs/update_future_weather.log 2>&1
+# Fetch Future Weather Data (e.g. every hour at minute 15)
+15 * * * * /path/to/fusionForecast/fetch_future_weather.sh >> /path/to/fusionForecast/logs/fetch_future_weather.log 2>&1
 
 # Train the model every day at 03:00 AM
 0 3 * * * /path/to/fusionForecast/train.sh >> /path/to/fusionForecast/logs/train.log 2>&1
