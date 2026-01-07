@@ -2,6 +2,8 @@
 
 FusionForecast is an ML-based tool for forecasting time series data (e.g., PV generation) using [**Prophet**](https://facebook.github.io/prophet/), [**InfluxDB**](https://www.influxdata.com/) and [**Open-Meteo**](https://open-meteo.com/). It trains a model based on historical data and external regressors (e.g., weather forecasts) and writes the forecasts back into an InfluxDB.
 
+![Logo]([https://raw.githubusercontent.com/benutzer/repo/main/images/logo.png](https://github.com/ActronX/fusionForecast/blob/main/Logo.jpg))
+
 ## Features
 
 - **Data Source**: Reads training data (target value and regressor) from InfluxDB.
