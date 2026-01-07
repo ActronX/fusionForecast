@@ -81,14 +81,16 @@ def write_to_influx(df):
     """Writes the dataframe to InfluxDB using same keys as historic fetcher."""
     
 
-    bucket = settings['buckets']['b_dwd_historic']
-    measurement = settings['measurements']['m_dwd_historic']
-    field = settings['fields']['f_dwd_historic']
+    bucket = settings['buckets']['b_regressor_future']
+    measurement = settings['measurements']['m_regressor_future']
+    field = settings['fields']['f_regressor_future']
     
     db_wrapper = InfluxDBWrapper()
     write_api = db_wrapper.client.write_api(write_options=SYNCHRONOUS)
     
     points = []
+    print(f"Target Measurement: '{measurement}'")
+    print(f"Target Field: '{field}'")
     print(f"Preparing points for InfluxDB bucket '{bucket}'...")
     
     for _, row in df.iterrows():
@@ -105,9 +107,9 @@ def main():
     print("Starting DWD forecast data fetch...")
 
     # Configuration Check
-    required_keys = ['b_dwd_historic', 'm_dwd_historic', 'f_dwd_historic']
-    if any(k not in settings.get('buckets', {}) for k in ['b_dwd_historic']):
-         print("Error: Missing 'b_dwd_historic' in settings.")
+    required_keys = ['b_regressor_future', 'm_regressor_future', 'f_regressor_future']
+    if any(k not in settings.get('buckets', {}) for k in ['b_regressor_future']):
+         print("Error: Missing 'b_regressor_future' in settings.")
          return
 
     try:

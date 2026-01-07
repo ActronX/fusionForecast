@@ -12,61 +12,54 @@ org = "your_org"              # Replace with your InfluxDB Organization
 
 [buckets]
 # Bucket containing historical production data (PV generation) for training
-b_history_produced = "sonnen_stats"
+b_history_produced = "energy_data"
 
 # Bucket containing historical consumption data (household usage) for training
-b_history_consumption = "sonnen_stats"
+b_history_consumption = "energy_data"
 
 # Bucket containing historical regressor data (e.g., historical weather forecasts/measurements)
-b_regressor_history = "dwdForecast"
-#b_regressor_history = "forecast"
+b_regressor_history = "weather_data"
 
 # Bucket containing future regressor data (e.g., weather forecasts) for prediction
-b_regressor_future = "dwdForecast"  
-#b_regressor_future = "home"  
+b_regressor_future = "weather_data"  
 
 # Bucket where the generated production forecasts will be written
-b_target_forecast = "fusionForecastData"
+b_target_forecast = "forecast_results"
 # Bucket where the generated consumption forecasts will be written
-b_target_consumption = "fusionForecastData"
+b_target_consumption = "forecast_results"
 
-# Bucket where fetched historical DWD weather data is stored
-b_dwd_historic = "dwdForecast"
+
 
 
 [measurements]
 # Measurement name for production data (PV)
-m_produced = "pv"
+m_produced = "energy_meter"
 # Measurement name for consumption data
-m_consumption = "pv"
+m_consumption = "energy_meter"
 # Measurement name for historical regressor data
-m_regressor_history = "icon_d2"
+m_regressor_history = "weather"
 # Measurement name for future regressor data
-m_regressor_future = "icon_d2"      
+m_regressor_future = "weather"      
 # Measurement name for the output production forecast
-m_forecast = "dwd"
+m_forecast = "production_forecast"
 # Measurement name for the output consumption forecast
-m_consumption_forecast = "m_consumption_forecast"
-# Measurement name for fetched DWD historic data
-m_dwd_historic = "icon_d2"
+m_consumption_forecast = "consumption_forecast"
 
 
 [fields]
 # Field name for produced energy/power
-f_produced = "generatedWh"
+f_produced = "power_produced"
 # Field name for consumed energy/power
-f_consumption = "houseWh"
+f_consumption = "power_consumed"
 
 # Field name for historical regressor value (Irradiance)
-f_regressor_history = "global_tilted_irradiance"
+f_regressor_history = "irradiance"
 # Field name for future regressor value (Irradiance)
-f_regressor_future = "global_tilted_irradiance"         
+f_regressor_future = "irradiance"         
 # Field name for the output production forecast value
-f_forecast = "global_tilted_irradiance"
-# Field name for fetched DWD historic data
-f_dwd_historic = "global_tilted_irradiance"
+f_forecast = "power_produced_forecast"
 # Field name for the output consumption forecast value
-f_consumption_forecast = "consumption_forecast"
+f_consumption_forecast = "power_consumed_forecast"
 
 
 [model]
@@ -172,9 +165,9 @@ azimuth = 0
 # API Endpoint for historical forecast data
 url = "https://historical-forecast-api.open-meteo.com/v1/forecast"
 # Start date for fetching historical data (YYYY-MM-DD)
-start_date = "2023-01-01"
+start_date = "2024-01-01"
 # End date for fetching historical data (YYYY-MM-DD)
-end_date = "2023-12-31"
+end_date = "2025-12-31"
 # Weather models to use (e.g., "icon_d2", "best_match")
 models = "icon_d2"
 # 15-minute variable to fetch
@@ -186,7 +179,7 @@ minutely_15 = "global_tilted_irradiance_instant"
 url = "https://api.open-meteo.com/v1/forecast"
 # Number of days to forecast into the future
 forecast_days = 3
-# Weather models to use
+# Weather models to use (e.g., "icon_d2", "best_match")
 models = "icon_d2"
 # 15-minute variable to fetch
 minutely_15 = "global_tilted_irradiance_instant"

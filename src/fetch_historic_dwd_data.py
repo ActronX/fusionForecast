@@ -81,14 +81,16 @@ def write_to_influx(df):
     """Writes the dataframe to InfluxDB."""
     
 
-    bucket = settings['buckets']['b_dwd_historic']
-    measurement = settings['measurements']['m_dwd_historic']
-    field = settings['fields']['f_dwd_historic']
+    bucket = settings['buckets']['b_regressor_history']
+    measurement = settings['measurements']['m_regressor_history']
+    field = settings['fields']['f_regressor_history']
     
     db_wrapper = InfluxDBWrapper()
     write_api = db_wrapper.client.write_api(write_options=SYNCHRONOUS)
     
     points = []
+    print(f"Target Measurement: '{measurement}'")
+    print(f"Target Field: '{field}'")
     print(f"Preparing points for InfluxDB bucket '{bucket}'...")
     
     for _, row in df.iterrows():
@@ -105,10 +107,10 @@ def main():
     print("Starting historic DWD data fetch...")
 
     # Configuration Check
-    required_keys = ['b_dwd_historic', 'm_dwd_historic', 'f_dwd_historic']
-    if any(k not in settings.get('buckets', {}) for k in ['b_dwd_historic']) or \
-       any(k not in settings.get('measurements', {}) for k in ['m_dwd_historic']) or \
-       any(k not in settings.get('fields', {}) for k in ['f_dwd_historic']):
+    required_keys = ['b_regressor_history', 'm_regressor_history', 'f_regressor_history']
+    if any(k not in settings.get('buckets', {}) for k in ['b_regressor_history']) or \
+       any(k not in settings.get('measurements', {}) for k in ['m_regressor_history']) or \
+       any(k not in settings.get('fields', {}) for k in ['f_regressor_history']):
          print("Error: Missing required InfluxDB settings in settings.toml.")
          return
 

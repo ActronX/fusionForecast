@@ -96,6 +96,8 @@ def run_forecast():
         except Exception as e:
             print(f"Warning: Could not apply forecast offset '{forecast_offset}': {e}")
 
+    print(f"Target Measurement: '{settings['measurements']['m_forecast']}'")
+    print(f"Target Field: '{settings['fields']['f_forecast']}'")
     print(f"Writing forecast to {settings['buckets']['b_target_forecast']}...")
     
     # Convert to list of Points or write DF directly
