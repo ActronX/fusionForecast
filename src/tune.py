@@ -149,8 +149,13 @@ def tune_hyperparameters():
     
     # We need at least enough data for CV. 
     total_days = (df['ds'].max() - df['ds'].min()).days
-    if total_days < 7:
-        print("Not enough data for cross-validation (< 7 days).")
+    
+    training_days = settings['forecast_parameters']['training_days']
+    if total_days < (training_days * 0.9):
+        print(f"Error: Insufficient historical data for tuning.")
+        print(f"  > Requested: {training_days} days")
+        print(f"  > Available: {total_days} days")
+        print("  > Please ensure buckets contain enough history or reduce 'training_days' in settings.toml")
         return
 
     initial = f'{max(5, int(total_days * 0.6))} days'

@@ -97,6 +97,15 @@ def train_model():
         print("Error: Training data empty after merging regressor. Check time alignment.")
         return
 
+    # Check if we have enough data as requested in settings
+    data_duration_days = (df_prophet['ds'].max() - df_prophet['ds'].min()).days
+    if data_duration_days < (training_days * 0.9): # Allow 10% tolerance for missing chunks/gaps
+        print(f"Error: Insufficient historical data.")
+        print(f"  > Requested: {training_days} days")
+        print(f"  > Available: {data_duration_days} days")
+        print("  > Please ensure buckets contain enough history or reduce 'training_days' in settings.toml")
+        return
+
     # 3. Configure and Train Model
     print("Configuring Prophet model...")
     yearly_seasonality = settings['prophet'].get('yearly_seasonality', False)

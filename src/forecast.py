@@ -65,6 +65,18 @@ def run_forecast():
     # Interpolate missing values (e.g. if upsampling from 1h to 30min)
     df_regressor[regressor_name] = df_regressor[regressor_name].interpolate(method='linear', limit_direction='both')
     
+    # Check data sufficiency (User requested 50% threshold)
+    duration = df_regressor['ds'].max() - df_regressor['ds'].min()
+    available_days = duration.total_seconds() / (24 * 3600)
+    
+    if available_days < (forecast_days * 0.5):
+         print(f"Error: Insufficient future regressor data.")
+         print(f"  > Requested Horizon: {forecast_days} days")
+         print(f"  > Available: {available_days:.2f} days")
+         print("  > Threshold: 50% of requested horizon required.")
+         print("  > Hint: Please run 'update_future_weather' to fetch more forecast data.")
+         return
+
     # Create Future DataFrame
     # Ideally we use the regressor's index as the future dataframe index
     # Prophet's make_future_dataframe is good but we already have the timestamps from the regressor
