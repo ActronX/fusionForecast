@@ -1,6 +1,6 @@
 # FusionForecast
 
-FusionForecast is an ML-based tool for forecasting time series data (e.g., PV generation) using [**Prophet**](https://facebook.github.io/prophet/) and [**InfluxDB**](https://www.influxdata.com/). It trains a model based on historical data and external regressors (e.g., weather forecasts or Solcast) and writes the forecasts back into an InfluxDB.
+FusionForecast is an ML-based tool for forecasting time series data (e.g., PV generation) using [**Prophet**](https://facebook.github.io/prophet/), [**InfluxDB**](https://www.influxdata.com/) and [**Open-Meteo**](https://open-meteo.com/). It trains a model based on historical data and external regressors (e.g., weather forecasts) and writes the forecasts back into an InfluxDB.
 
 ## Features
 
@@ -16,6 +16,8 @@ FusionForecast is an ML-based tool for forecasting time series data (e.g., PV ge
 - InfluxDB v2
 - Access to relevant InfluxDB buckets
 - **Historical PV Data:** At least 30 days of historical generation data are required for training. Ideally, 1 to 2 years of data should be available for better accuracy.
+    - **Frequency:** Data should preferably be stored every 15 to 60 minutes. It is not critical if individual data points are missing; the system is designed to handle gaps and inexact timestamps.
+    - **Timezone:** The correct timezone must be observed. The system operates in UTC. An offset can be defined in the settings.
 
 ## Installation
 
@@ -200,7 +202,7 @@ This section describes which data is read from and written to InfluxDB, and why 
 *Scripts: `src/update_dwd_data.py`, `src/fetch_historic_dwd_data.py`*
 
 - **Writes**:
-    - **Historic Weather** (`b_dwd_historic`): Stores historical weather data fetched from Open-Meteo.
+    - **Historic Weather** (`b_regressor_history`): Stores historical weather data fetched from Open-Meteo.
     - **Future Weather** (`b_regressor_future`): Stores the latest weather forecast from Open-Meteo.
 - **Why**: FusionForecast relies on external weather data (Irradiance) to make accurate PV predictions. This data must be actively fetched and stored in InfluxDB so the Training and Forecast scripts can access it.
 
