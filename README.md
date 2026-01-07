@@ -56,7 +56,7 @@ Configuration is managed via the `settings.toml` file.
     - `regressor_offset`: Time offset for the regressor (e.g., `"-1h"`), applied via `timeShift()`.
 - **[forecast_parameters]**:
     - `training_days`: Past period of training data (e.g., 731 days).
-    - `forecast_days`: Forecast horizon into the future (e.g., 3 days).
+    - `forecast_days`: Forecast horizon into the future (e.g., 14 days).
 - **[prophet]**:
     - `regressor_prior_scale`: Prior scale for the regressor (controls flexibility).
     - `seasonality_mode` / `regressor_mode`: Additive or Multiplicative.

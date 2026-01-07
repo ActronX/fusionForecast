@@ -55,7 +55,7 @@ model_path = "models/prophet_model.pkl"
 # Number of days of historical data to use for training (e.g., 731 = 2 years + 1 day)
 training_days = 731
 # specific horizon for the forecast in days (how far ahead to predict)
-forecast_days = 3
+forecast_days = 14
 
 
 
@@ -141,7 +141,7 @@ minutely_15 = "global_tilted_irradiance_instant"
 # API Endpoint for current forecast data
 url = "https://api.open-meteo.com/v1/forecast"
 # Number of days to forecast into the future
-forecast_days = 3
+forecast_days = 14
 # Weather models to use (e.g., "icon_d2", "best_match")
 models = "best_match"
 # 15-minute variable to fetch
