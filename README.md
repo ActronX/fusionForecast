@@ -174,10 +174,9 @@ Here is a detailed description of the Python scripts located in `src/`:
 - **`src/fetch_historic_weather.py`**: Fetches **historical** weather data from Open-Meteo for the past (used for training the regressor).
 
 ### Utilities & Maintenance
-- **`src/evaluate.py`**: Calculates error metrics (RMSE, MAE, MAPE) by comparing past forecasts with actual values. helpful for checking model performance.
+
 - **`src/tune.py`**: Performs **Hyperparameter Tuning** using a grid search to find the optimal Prophet parameters (e.g., `changepoint_prior_scale`) for your specific data.
-- **`src/diagnose.py`**: Diagnostic tool to check data integrity, timestamps, and potential issues in InfluxDB data before training.
-- **`src/backfill.py`**: Generates "historical forecasts" (hindcasts) using the current model to evaluate how it *would have* performed in the past.
+
 - **`src/plot_model.py`**: Generates interactive Plotly charts of the model components (trend, seasonality) for visual inspection.
 
 
@@ -241,22 +240,4 @@ Add the following lines (adjust `/path/to/fusionForecast` to your installation p
 Ensure the scripts are executable (`chmod +x *.sh`) and the path is absolute.
 Logs will be stored in the `logs/` directory (created automatically by `install_deps.sh`).
 
-## Evaluation Metrics
 
-To assess the quality of the forecasts, the following metrics are used. They help to understand how much the model deviates from the actual values.
-
-> **Note:** All metrics are calculated only for time periods where the actual production (`y_true`) exceeds a configurable threshold (default `50` units). This ensures that night hours or times of insignificant production do not distort the error metrics (e.g., by artificially lowering RMSE/MAE due to many zero-error data points at night).
-
-### RMSE (Root Mean Squared Error)
-- **Definition:** The square root of the average of squared errors.
-- **Relevance for PV:** RMSE penalizes larger errors more heavily than smaller ones. In the context of PV forecasting, this is particularly relevant if large deviations (e.g., predicting full sun during a thunderstorm) are significantly more "expensive" or problematic for grid/battery management than many small deviations.
-
-### MAE (Mean Absolute Error)
-- **Definition:** The average of absolute errors.
-- **Relevance for PV:** This gives a direct average of "how far off" the forecast is in the same unit as the data (e.g., Watts). It is easy to interpret: "On average, the forecast is off by X Watts."
-
-### MAPE (Mean Absolute Percentage Error)
-- **Definition:** The average percentage error.
-- **Relevance for PV:** Indicates accuracy in percent.
-    - **Challenge:** For PV systems, production is often 0 (at night) or very low. Division by zero (or near zero) leads to infinite or extremely high MAPE values that distort the overall picture.
-    - **Solution:** Therefore, MAPE is usually only calculated for daylight hours or implied with a small offset, but remains difficult to interpret for night times.
