@@ -65,7 +65,7 @@ Configuration is passed via `msg.config.consumer`.
 | min_soc | Critical battery level for emergency cutoff. | % |
 | soc_hysteresis | Recovery buffer above min_soc to prevents toggling. | % |
 | battery_capacity_kwh | Total capacity of the home battery. | kWh |
-| reserve_kwh | Energy buffer to keep in the battery (target). | kWh |
+| reserve_kwh | Safety buffer to ensure battery reaches 100% even if the forecast was too optimistic. | kWh |
 | base_load_w | Average house consumption to subtract from solar gain. | W |
 | consumer_power_w | Power consumption of the controlled device. | W |
 | min_runtime_minutes | Minimum runtime used to calculate "Cycle Cost". | min |
