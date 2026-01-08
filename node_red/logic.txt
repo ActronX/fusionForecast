@@ -14,7 +14,7 @@ if (!msg.config || !msg.config.consumer) {
 const conf = msg.config.consumer;
 
 // --- HYSTERESIS CONSTANTS ---
-const SOC_HYSTERESIS = 20.0; // Battery must charge 20% above min_soc before restarting
+const SOC_HYSTERESIS =  conf.soc_hyteresis; // Battery must charge a few % above min_soc before restarting
 
 // FIX: Ensure target never exceeds 100% to avoid infinite waiting
 const RECOVERY_SOC = Math.min(conf.min_soc + SOC_HYSTERESIS, 100);

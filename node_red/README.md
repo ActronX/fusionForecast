@@ -63,6 +63,7 @@ Configuration is passed via `msg.config.consumer`.
 | Parameter | Description | Unit |
 | :--- | :--- | :--- |
 | min_soc | Critical battery level for emergency cutoff. | % |
+| soc_hysteresis | Recovery buffer above min_soc to prevents toggling. | % |
 | battery_capacity_kwh | Total capacity of the home battery. | kWh |
 | reserve_kwh | Energy buffer to keep in the battery (target). | kWh |
 | base_load_w | Average house consumption to subtract from solar gain. | W |
