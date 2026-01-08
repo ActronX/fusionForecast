@@ -154,6 +154,7 @@ The tuning script evaluates model performance using Cross-Validation and calcula
 
 - `src/`: Source code (Python scripts).
 - `models/`: Storage location for trained models (`prophet_model.pkl`).
+- `node_red/`: Node-RED flows and documentation for consumer control.
 - `settings.toml`: Configuration file.
 - `requirements.txt`: Python dependencies.
 
@@ -233,3 +234,14 @@ Ensure the scripts are executable (`chmod +x *.sh`) and the path is absolute.
 Logs will be stored in the `logs/` directory (created automatically by `install_deps.sh`).
 
 
+
+## Smart Consumer Control (Node-RED)
+
+For users who want to use the forecast data to control physical devices (e.g., heating, EV charging), we provide a ready-to-use **Node-RED** flow.
+
+This flow implements intelligent logic to switch consumers based on:
+- Solar energy surplus
+- Battery SoC
+- Forecast data
+
+👉 **[Read the full Node-RED Documentation](node_red/README.md)**
