@@ -1,0 +1,26 @@
+import "date"
+
+// As a precaution, we look until tomorrow morning, but stop/cut off in the script
+heute_start = date.truncate(t: now(), unit: 1d)
+morgen_frueh = date.add(d: 24h, to: heute_start)
+
+// 1. Get SoC (as before)
+soc_stream = from(bucket: "batterie")
+  |> range(start: -1h)
+  |> filter(fn: (r) => r["_measurement"] == "pv")
+  |> filter(fn: (r) => r["_field"] == "USOC")
+  |> last()
+  |> map(fn: (r) => ({r with _field: "type_soc"}))
+
+// 2. Get forecast curve (WITHOUT integral)
+// We take the mean every 15 minutes (15m) to avoid having too many data points
+forecast_stream = from(bucket: "forecast_results")
+  |> range(start: now(), stop: morgen_frueh)
+  |> filter(fn: (r) => r["_measurement"] == "production_forecast")
+  |> filter(fn: (r) => r["_field"] == "power_produced_forecast")
+  |> aggregateWindow(every: 15m, fn: mean, createEmpty: false)
+  |> map(fn: (r) => ({r with _field: "type_forecast"}))
+
+// 3. Union
+union(tables: [soc_stream, forecast_stream])
+  |> keep(columns: ["_time", "_field", "_value"])
