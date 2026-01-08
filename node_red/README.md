@@ -17,7 +17,11 @@ It includes advanced protection features:
 
 To make this logic work, connect your Node-RED nodes in the following linear sequence:
 
+![Wiring](Wiring.jpg)
+
 `[Inject] --> [Template] --> [InfluxDB] --> [Function] --> [Output]`
+
+
 
 ### 1. Inject Node (Trigger)
 * **Setting:** Set an interval (e.g., every 15 minutes).
