@@ -96,9 +96,11 @@ The final switch state is determined by this priority list:
     * If the device was previously **OFF** and the battery is charging, it remains **OFF** until SoC >= (min_soc + 20%).
 3.  **Safety Guard (Color: BLACK):**
     * If valid forecast data covers less than **2.0 hours** (e.g., connection loss or end of day), the device is forced **OFF**.
-4.  **Surplus Decision (Color: GREEN or ORANGE):**
-    * If Surplus kWh >= Cycle Cost: Switch **ON**.
-    * Otherwise: Switch **OFF**.
+4.  **Current Power Gate (Color: YELLOW):**
+    *   If current solar power is too low AND battery is below recovery limit, the device is forced **OFF** (prevents draining battery when sun is gone).
+5.  **Surplus Decision (Color: GREEN or YELLOW):**
+    *   If Surplus kWh >= Cycle Cost: Switch **ON**.
+    *   Otherwise: Switch **OFF**.
 
 ---
 
@@ -112,7 +114,7 @@ The Node-RED status dot provides immediate visual feedback:
 | **BLUE** | WAITING | **Charging.** Battery is above minimum but has not reached the recovery target (+20%) yet. |
 | **BLACK**| SAFETY | **Data Issue.** Forecast horizon is too short (< 2h) to make a safe decision. |
 | **GREEN**| ON | **Active.** Sufficient solar surplus calculated. |
-| **ORANGE**| OFF | **Low Surplus.** System is healthy, but not enough sun to run the device. |
+| **YELLOW**| OFF | **Low Surplus.** System is healthy, but not enough sun to run the device. |
 | **GREY (Dot)** | ERROR | **No Data.** InfluxDB query returned no valid payload. |
 | **GREY (Ring)** | CONFIG | **Config Error.** Invalid configuration values detected (not a number or negative). Script execution aborted. |
 

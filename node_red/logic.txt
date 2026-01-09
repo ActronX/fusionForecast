@@ -105,6 +105,7 @@ let debugInfo = {
     config_used: conf,
     low_bat_lock_active: lowBatLock,
     hysteresis_recovery_target: RECOVERY_SOC,
+    current_forecast_w: 0, 
     solar_gain_kwh: 0,
     base_loss_kwh: 0,
     surplus_kwh: 0,
@@ -131,6 +132,13 @@ else {
     let validHours = 0;
     let cutoffReason = "End of data";
     
+    // Determine the current forecast power (Now)
+    let currentForecastWatts = 0;
+    if (forecastList.length > 0) {
+        const nowVal = Number(forecastList[0]._value);
+        currentForecastWatts = nowVal * conf.forecast_conversion_factor;
+    }
+
     const timeStepHours = 0.25; 
 
     for (let point of forecastList) {
@@ -159,6 +167,7 @@ else {
     const cycleCostKwh = consumerKw * (conf.min_runtime_minutes / 60);
 
     debugInfo.state = "CALCULATED";
+    debugInfo.current_forecast_w = currentForecastWatts;
     debugInfo.solar_gain_kwh = solarKwhSum;
     debugInfo.base_loss_kwh = baseLoadKwhSum;
     debugInfo.surplus_kwh = surplusKwh;
@@ -172,13 +181,6 @@ else {
 
     // 1. Battery CRITICAL (Below Limit)
     // -------------------------------------------------------------
-    // If the battery drops below min_soc, we MUST switch off.
-    // However, we only activate the "Penalty Lock" (lowBatLock) if
-    // the load was actually running (lastState === 0).
-    //
-    // Reasoning:
-    // - If load was ON: It contributed to the drain -> LOCK it to let battery recover.
-    // - If load was OFF: It's just natural drain (e.g. night) -> NO LOCK, normal behavior.
     if (currentSoc <= conf.min_soc) {
         if (lastState === 0) {
             lowBatLock = true; // Activate Lock
@@ -192,7 +194,6 @@ else {
         color = "red";
     }
     // 2. Battery RECOVERING (Lock is active) -> Stay OFF
-    // This logic now only applies if 'lowBatLock' was actually set to true above.
     else if (lowBatLock === true) {
         reason = `Hysteresis Lock... Wait for ${RECOVERY_SOC}% (curr: ${currentSoc.toFixed(1)}%)`;
         debugInfo.state = "HYSTERESIS_LOCKED";
@@ -206,16 +207,25 @@ else {
         reason = `OFF. Forecast too short (${validHours}h < ${MIN_SAFE_HOURS}h)`;
         debugInfo.state = "SAFETY_GUARD_ACTIVE";
     }
-    // 4. Surplus OK? -> ON
+    // 4. Current Power Gate (BUFFERED)
+    // Switch off if current forecast is too weak AND battery is also weak (< Recovery Limit).
+    // If the battery is full enough (> Recovery), we allow "Cloud Buffering from battery". See 5. Surplus OK? -> ON
+    else if (currentForecastWatts < (conf.consumer_power_w + conf.base_load_w) && currentSoc < RECOVERY_SOC) {
+        switchState = 1; // OFF
+        color = "yellow";
+        reason = `OFF. Sun & Batt Low (${currentForecastWatts.toFixed(0)}W, ${currentSoc.toFixed(1)}%)`;
+        debugInfo.state = "CURRENT_POWER_AND_SOC_LOW";
+    }
+    // 5. Surplus OK? -> ON
     else if (surplusKwh >= cycleCostKwh) {
         switchState = 0; // ON
         color = "green";
         reason = `ON. Surplus: ${surplusKwh.toFixed(2)} kWh`;
     } 
-    // 5. No Surplus -> OFF
+    // 6. No Surplus -> OFF
     else {
         switchState = 1; // OFF
-        color = "orange";
+        color = "yellow";
         if (surplusKwh > 0) {
             reason = `OFF. Surplus too low (${surplusKwh.toFixed(2)} < ${cycleCostKwh.toFixed(2)})`;
         } else {
