@@ -1,4 +1,23 @@
-// Safety check: Only check IF config exists
+/**
+ * Control Logic for Smart Solar Consumer
+ * ==========================================================
+ * This logic determines if a consumer (load) should be switched ON based on:
+ * 1. Current Battery SoC (State of Charge)
+ * 2. Solar Forecast Data (InfluxDB)
+ * 3. Calculated Energy Surplus
+ * 4. Safety Constraints & Hysteresis Logic
+ *
+ * Inputs:
+ * - msg.config: Configuration object (params like min_soc, capacity...)
+ * - msg.payload: Array of InfluxDB data points (SoC + Forecast)
+ * - context.lastState: Previous switch state (1=OFF, 0=ON)
+ * - context.lowBatLock: Safety lock that activates if battery crashes while load is ON
+ *
+ * Outputs:
+ * - msg.payload: 0 (ON) or 1 (OFF)
+ * - msg.debug_calc: Detailed calculation info for debugging
+ * - node.status: Visual ring/dot indicator
+ */
 if (!msg.config || !msg.config.consumer) {
     node.error("Critical Error: No configuration received!");
     node.status({fill: "red", shape: "ring", text: "Missing Config"});
@@ -39,9 +58,13 @@ try {
 const RECOVERY_SOC = Math.min(conf.min_soc + conf.soc_hysteresis, 100);
 
 // --- LOAD CONTEXT (MEMORY) ---
+// lastState: Tracks if the load was ON (0) or OFF (1) in the previous run.
+// Used to detect "falling edge" events (transition from ON -> OFF).
 let lastState = context.get('lastState');
 if (lastState === undefined) lastState = 1; // Default: OFF (1)
 
+// lowBatLock: A 'latch' that engages if the battery drops below min_soc while the load was active.
+// It forces the load to stay OFF until the battery recovers significantly (RECOVERY_SOC).
 let lowBatLock = context.get('lowBatLock');
 if (lowBatLock === undefined) lowBatLock = false;
 
@@ -148,15 +171,20 @@ else {
     // --- DECISION LOGIC (UPDATED) ---
 
     // 1. Battery CRITICAL (Below Limit)
+    // -------------------------------------------------------------
+    // If the battery drops below min_soc, we MUST switch off.
+    // However, we only activate the "Penalty Lock" (lowBatLock) if
+    // the load was actually running (lastState === 0).
+    //
+    // Reasoning:
+    // - If load was ON: It contributed to the drain -> LOCK it to let battery recover.
+    // - If load was OFF: It's just natural drain (e.g. night) -> NO LOCK, normal behavior.
     if (currentSoc <= conf.min_soc) {
-        // LOGIC CHANGE HERE:
-        // Only trigger the "Lock" (Penalty) if we were ON (0).
-        // If we were OFF (1), it's a natural drain (night), so we don't lock.
         if (lastState === 0) {
-            lowBatLock = true;
-            debugInfo.state = "LOW_BATTERY_CRASH"; // Debug Info
+            lowBatLock = true; // Activate Lock
+            debugInfo.state = "LOW_BATTERY_CRASH"; 
         } else {
-            debugInfo.state = "LOW_BATTERY_IDLE"; // Debug Info
+            debugInfo.state = "LOW_BATTERY_IDLE"; 
         }
 
         reason = `Low Battery (${currentSoc.toFixed(1)}% <= ${conf.min_soc}%)`;
