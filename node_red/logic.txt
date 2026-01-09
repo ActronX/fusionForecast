@@ -1,5 +1,5 @@
 /**
- * CONTROL LOGIC (Direct Config + Safety Guard + Hysteresis)
+ * CONTROL LOGIC (Direct Config + Safety Guard + Hysteresis FIX)
  * Expects msg.config.consumer from Template Node
  */
 
@@ -10,19 +10,11 @@ if (!msg.config || !msg.config.consumer) {
     return null; 
 }
 
-// --- INITIALIZATION ---
-
-let switchState = 1; // Standard: OFF
-let reason = "";
-let color = "red";
-
 // --- CONFIGURATION VALIDATION (STRICT) ---
-
-// Helper: validate number >= 0. Throws error if invalid.
 function requireVal(val, name) {
     const num = Number(val);
     if (isNaN(num) || num < 0) {
-        throw new Error(`Invalid valid for '${name}': ${val}`);
+        throw new Error(`Invalid value for '${name}': ${val}`);
     }
     return num;
 }
@@ -31,10 +23,9 @@ const rawConf = msg.config.consumer || {};
 let conf;
 
 try {
-    // Construct validated configuration object
     conf = {
         min_soc: requireVal(rawConf.min_soc, "min_soc"),
-        soc_hysteresis: requireVal(rawConf.soc_hysteresis, "soc_hysteresis"),
+        soc_hysteresis: Number(rawConf.soc_hysteresis) || 5.0, // Fallback allowed
         min_runtime_minutes: requireVal(rawConf.min_runtime_minutes, "min_runtime_minutes"),
         battery_capacity_kwh: requireVal(rawConf.battery_capacity_kwh, "battery_capacity_kwh"),
         reserve_kwh: requireVal(rawConf.reserve_kwh, "reserve_kwh"),
@@ -45,19 +36,17 @@ try {
 } catch (error) {
     node.error(error.message);
     node.status({fill: "grey", shape: "ring", text: "Config Error"});
-    return null; // Abort execution
+    return null; 
 }
 
 // --- HYSTERESIS CONSTANTS ---
-const SOC_HYSTERESIS =  conf.soc_hysteresis; // Battery must charge a few % above min_soc before restarting
-
-// FIX: Ensure target never exceeds 100% to avoid infinite waiting
-const RECOVERY_SOC = Math.min(conf.min_soc + SOC_HYSTERESIS, 100);
+// FIX: Ensure target never exceeds 100%
+const RECOVERY_SOC = Math.min(conf.min_soc + conf.soc_hysteresis, 100);
 
 // --- LOAD CONTEXT (MEMORY) ---
-// We need to know if we were last ON or OFF
-let lastState = context.get('lastState');
-if (lastState === undefined) lastState = 1; // Default: OFF (1)
+// We track if we are currently in a "Low Battery Penalty Box"
+let lowBatLock = context.get('lowBatLock');
+if (lowBatLock === undefined) lowBatLock = false;
 
 // --- EXTRACT DATA FROM INFLUX ---
 let currentSoc = -1; 
@@ -65,36 +54,45 @@ let forecastList = [];
 let dataValid = false;
 
 if (Array.isArray(msg.payload)) {
-    // 1. Find SoC
     const socObj = msg.payload.find(r => r._field === "type_soc");
-    if (socObj && socObj._value !== undefined && socObj._value !== null) {
+    if (socObj && socObj._value !== undefined) {
         currentSoc = Number(socObj._value);
     }
 
-    // 2. Filter forecast list
     forecastList = msg.payload.filter(r => 
         r._field === "type_forecast" && r._time && r._value !== null
     );
 
-    // 3. Sort by time
     try {
         forecastList.sort((a, b) => new Date(a._time).getTime() - new Date(b._time).getTime());
     } catch (e) {
         node.warn("Error sorting: " + e.message);
     }
     
-    // Validation: We need at least the SoC
     if (currentSoc !== -1) dataValid = true;
 }
 
-// Prepare debug object (fully initialized)
+// --- INITIALIZATION ---
+
+let switchState = 1; // Standard: OFF
+let reason = "";
+let color = "red";
+
+// --- UPDATE LOCK STATE ---
+// Before making decisions, update the lock based on current SoC
+
+// If we reached the target, release the lock
+if (dataValid && currentSoc >= RECOVERY_SOC) {
+    lowBatLock = false;
+}
+
+// Prepare debug object
 let debugInfo = {
     state: "INIT",
     soc: currentSoc,
     config_used: conf,
-    last_state_mem: lastState, 
+    low_bat_lock_active: lowBatLock, // Shows if we are in penalty mode
     hysteresis_recovery_target: RECOVERY_SOC,
-    // Placeholders for calculated values
     solar_gain_kwh: 0,
     base_loss_kwh: 0,
     surplus_kwh: 0,
@@ -118,14 +116,12 @@ else {
     let validHours = 0;
     let cutoffReason = "End of data";
     
-    const timeStepHours = 0.25; // Corresponds to Influx Window 15m
+    const timeStepHours = 0.25; 
 
     for (let point of forecastList) {
         const rawVal = Number(point._value);
-        // Direct access to conf.forecast_conversion_factor
         const generatedWatts = rawVal * conf.forecast_conversion_factor;
         
-        // Abort: Generation < Base load (conf.base_load_w)
         if (generatedWatts < conf.base_load_w) {
             cutoffReason = `Power < BaseLoad`;
             break;
@@ -139,17 +135,15 @@ else {
         validHours += timeStepHours;
     }
 
-    // Balancing with config values
     const currentEnergyKwh = (currentSoc / 100) * conf.battery_capacity_kwh;
     const projectedEnergy = currentEnergyKwh + (solarKwhSum - baseLoadKwhSum);
     const targetEnergy = conf.battery_capacity_kwh + conf.reserve_kwh;
     const surplusKwh = projectedEnergy - targetEnergy;
     
-    // Calculate cost for minimum runtime
     const consumerKw = conf.consumer_power_w / 1000;
     const cycleCostKwh = consumerKw * (conf.min_runtime_minutes / 60);
 
-    // Fill debug infos
+    // Debug Fill
     debugInfo.state = "CALCULATED";
     debugInfo.solar_gain_kwh = solarKwhSum;
     debugInfo.base_loss_kwh = baseLoadKwhSum;
@@ -160,37 +154,39 @@ else {
 
     const MIN_SAFE_HOURS = 2.0;
 
-    // --- DECISION WITH HYSTERESIS ---
+    // --- DECISION LOGIC ---
 
-    // 1. Battery is critically low -> IMMEDIATELY OFF
+    // 1. Battery CRITICAL -> Activate Lock & OFF
     if (currentSoc <= conf.min_soc) {
+        lowBatLock = true; // <--- LOCK ACTIVATED
         reason = `Low Battery (${currentSoc.toFixed(1)}% <= ${conf.min_soc}%)`;
         debugInfo.state = "LOW_BATTERY_CUTOFF";
-        switchState = 1; // OFF
+        switchState = 1; 
         color = "red";
     }
-    // 2. Battery is in "recovery phase" (hysteresis)
-    // If we were OFF (lastState === 1) AND have not yet reached the recovery target
-    else if (lastState === 1 && currentSoc < RECOVERY_SOC) {
-        reason = `Charging... Wait for ${RECOVERY_SOC}% (curr: ${currentSoc.toFixed(1)}%)`;
-        debugInfo.state = "HYSTERESIS_RECOVERY";
-        switchState = 1; // Remains OFF
-        color = "blue"; // Blue for "Waiting/Charging"
+    // 2. Battery RECOVERING (Lock is active) -> Stay OFF
+    // This only triggers if we HIT the bottom previously.
+    // If we are just "low but stable" (e.g. morning), this is skipped!
+    else if (lowBatLock === true) {
+        reason = `Recovering... Wait for ${RECOVERY_SOC}% (curr: ${currentSoc.toFixed(1)}%)`;
+        debugInfo.state = "HYSTERESIS_LOCKED";
+        switchState = 1; 
+        color = "blue";
     }
-    // 3. Safety guard: Data incomplete?
+    // 3. Safety Guard
     else if (validHours < MIN_SAFE_HOURS) {
-        switchState = 1; // OFF
+        switchState = 1; 
         color = "black";
         reason = `OFF. Forecast too short (${validHours}h < ${MIN_SAFE_HOURS}h)`;
         debugInfo.state = "SAFETY_GUARD_ACTIVE";
     }
-    // 4. Normal logic (Enough surplus?)
+    // 4. Surplus OK? -> ON
     else if (surplusKwh >= cycleCostKwh) {
         switchState = 0; // ON
         color = "green";
         reason = `ON. Surplus: ${surplusKwh.toFixed(2)} kWh`;
     } 
-    // 5. Too little surplus
+    // 5. No Surplus -> OFF
     else {
         switchState = 1; // OFF
         color = "orange";
@@ -202,10 +198,8 @@ else {
     }
 }
 
-// --- SAVE STATUS & OUTPUT ---
-
-// We save the new status for the next run
-context.set('lastState', switchState);
+// --- SAVE STATE ---
+context.set('lowBatLock', lowBatLock);
 
 msg.payload = switchState;
 msg.debug_calc = debugInfo;
