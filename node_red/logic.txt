@@ -54,17 +54,13 @@ try {
 }
 
 // --- HYSTERESIS CONSTANTS ---
-// FIX: Ensure target never exceeds 100%
+// This is used to release the lock after a crash
 const RECOVERY_SOC = Math.min(conf.min_soc + conf.soc_hysteresis, 100);
 
 // --- LOAD CONTEXT (MEMORY) ---
-// lastState: Tracks if the load was ON (0) or OFF (1) in the previous run.
-// Used to detect "falling edge" events (transition from ON -> OFF).
 let lastState = context.get('lastState');
 if (lastState === undefined) lastState = 1; // Default: OFF (1)
 
-// lowBatLock: A 'latch' that engages if the battery drops below min_soc while the load was active.
-// It forces the load to stay OFF until the battery recovers significantly (RECOVERY_SOC).
 let lowBatLock = context.get('lowBatLock');
 if (lowBatLock === undefined) lowBatLock = false;
 
@@ -93,7 +89,6 @@ if (Array.isArray(msg.payload)) {
 }
 
 // --- UPDATE LOCK STATE (RESET) ---
-// If we reached the target, release the lock immediately
 if (dataValid && currentSoc >= RECOVERY_SOC) {
     lowBatLock = false;
 }
@@ -110,6 +105,7 @@ let debugInfo = {
     base_loss_kwh: 0,
     surplus_kwh: 0,
     required_cycle_kwh: 0,
+    required_cycle_soc_pct: 0, 
     cutoff_reason: "",
     forecast_hours: 0
 };
@@ -166,24 +162,33 @@ else {
     const consumerKw = conf.consumer_power_w / 1000;
     const cycleCostKwh = consumerKw * (conf.min_runtime_minutes / 60);
 
+    // Calculate SoC needed for one cycle
+    // Example: 1.5kWh needed / 10kWh Battery = 0.15 = 15% SoC needed
+    const cycleCostSoc = (cycleCostKwh / conf.battery_capacity_kwh) * 100;
+    
+    // Define the Safe Buffer Level: 
+    // We use the MAXIMUM of either the Hysteresis Setting OR the Calculated Cycle Cost.
+    // This ensures we always have enough juice for at least one run.
+    const SAFE_BUFFER_SOC = Math.min(conf.min_soc + Math.max(conf.soc_hysteresis, cycleCostSoc), 100);
+
     debugInfo.state = "CALCULATED";
     debugInfo.current_forecast_w = currentForecastWatts;
     debugInfo.solar_gain_kwh = solarKwhSum;
     debugInfo.base_loss_kwh = baseLoadKwhSum;
     debugInfo.surplus_kwh = surplusKwh;
     debugInfo.required_cycle_kwh = cycleCostKwh;
+    debugInfo.required_cycle_soc_pct = cycleCostSoc; // Show in Debug
     debugInfo.cutoff_reason = cutoffReason;
     debugInfo.forecast_hours = validHours;
 
     const MIN_SAFE_HOURS = 2.0;
 
-    // --- DECISION LOGIC (UPDATED) ---
+    // --- DECISION LOGIC ---
 
-    // 1. Battery CRITICAL (Below Limit)
-    // -------------------------------------------------------------
+    // 1. Battery CRITICAL
     if (currentSoc <= conf.min_soc) {
         if (lastState === 0) {
-            lowBatLock = true; // Activate Lock
+            lowBatLock = true; 
             debugInfo.state = "LOW_BATTERY_CRASH"; 
         } else {
             debugInfo.state = "LOW_BATTERY_IDLE"; 
@@ -193,7 +198,7 @@ else {
         switchState = 1; // OFF
         color = "red";
     }
-    // 2. Battery RECOVERING (Lock is active) -> Stay OFF
+    // 2. Battery RECOVERING (Lock Active)
     else if (lowBatLock === true) {
         reason = `Hysteresis Lock... Wait for ${RECOVERY_SOC}% (curr: ${currentSoc.toFixed(1)}%)`;
         debugInfo.state = "HYSTERESIS_LOCKED";
@@ -207,32 +212,25 @@ else {
         reason = `OFF. Forecast too short (${validHours}h < ${MIN_SAFE_HOURS}h)`;
         debugInfo.state = "SAFETY_GUARD_ACTIVE";
     }
-    // 4. Primary Check: Is there enough total Energy Surplus?
-    // We only proceed if the predicted excess energy (Surplus) is sufficient to cover the cost of running the device.
+    // 4. Primary Check: Is Surplus Enough?
     else if (surplusKwh >= cycleCostKwh) {
         
-        // Secondary Check: Momentary Power Implementation (Buffering)
-        // Even if we have enough daily surplus, we must ensure we can actually power the device NOW.
-        // We can run if EITHER:
-        //  A) The current solar power is strong enough to cover load + base load.
-        //  OR
-        //  B) The battery has enough charge (> RECOVERY_SOC) to "buffer" the load during clouds/low power.
-        //
-        // If BOTH are false (Low Sun AND Low Battery), we must wait, even if we have surplus.
-        if (currentForecastWatts < (conf.consumer_power_w + conf.base_load_w) && currentSoc < RECOVERY_SOC) {
+        // Secondary Check: "Cloud Buffer" Logic
+        // We only switch OFF if Sun is low AND Battery Buffer is insufficient.
+        // We use SAFE_BUFFER_SOC here to guarantee we can survive the min_runtime.
+        if (currentForecastWatts < (conf.consumer_power_w + conf.base_load_w) && currentSoc < SAFE_BUFFER_SOC) {
             switchState = 1; // OFF
             color = "yellow";
-            reason = `OFF. Sun & Batt Low (${currentForecastWatts.toFixed(0)}W, ${currentSoc.toFixed(1)}%)`;
+            reason = `OFF. Sun & Batt Low (${currentForecastWatts.toFixed(0)}W, <${SAFE_BUFFER_SOC.toFixed(1)}%)`;
             debugInfo.state = "CURRENT_POWER_AND_SOC_LOW";
         } 
-        // Implementation: Surplus is sufficient AND we have power (Sun or Battery Buffer) -> GO
         else {
             switchState = 0; // ON
             color = "green";
             reason = `ON. Surplus: ${surplusKwh.toFixed(2)} kWh`;
         }
     } 
-    // 5. No Surplus -> OFF
+    // 5. No Surplus
     else {
         switchState = 1; // OFF
         color = "yellow";
