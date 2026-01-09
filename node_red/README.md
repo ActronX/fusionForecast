@@ -98,11 +98,32 @@ The final switch state is determined by this priority list:
     * If valid forecast data covers less than **2.0 hours** (e.g., connection loss or end of day), the device is forced **OFF**.
 4.  **Surplus Decision (Color: GREEN):**
     *   **Primary Check:** Is the predicted *Total Daily Surplus* >= Cycle Cost?
-    *   **Secondary Check (Buffering):** If yes, do we have enough *momentary power*?
-        *   If current solar power is low AND battery is low (< recovery limit), we wait (**YELLOW**).
-        *   If current solar power is high OR battery is full enough to buffer, we switch **ON** (**GREEN**).
+    *   **Secondary Check (Buffering):** If yes, can we run *NOW* without crashing the battery?
+        *   We calculate a **SAFE_BUFFER_SOC** (Min SOC + Hysteresis OR Cycle Cost, whichever is higher).
+        *   If **Battery < SAFE_BUFFER_SOC** AND **Current Forecast < Base Load**, we forced **OFF** (Waiting for Sun/Battery).
+        *   If **Battery > SAFE_BUFFER_SOC** OR **Current Forecast > Base Load**, we switch **ON**.
 5.  **No Surplus (Color: YELLOW):**
     *   If the Total Daily Surplus is insufficient, the device is switched **OFF**.
+
+---
+
+
+### Examples: How `SAFE_BUFFER_SOC` is calculated
+The buffer's main goal is to ensure the battery can **survive at least one full operation cycle** (min_runtime) without falling below the critical limit. We take the larger of "Cycle Cost" or "Hysteresis".
+
+**Formula:** `SAFE_BUFFER_SOC = min_soc + MAX(soc_hysteresis, required_cycle_soc)`
+
+#### Case A: Hysteresis is dominant (Small Load)
+*   `min_soc` = 30%
+*   `soc_hysteresis` = 20%
+*   `cycle_cost` = 1.5 kWh (approx 15% of a 10kWh battery)
+*   **Result:** 30% + MAX(20%, 15%) = 30% + 20% = **50%**
+
+#### Case B: Cycle Cost is dominant (Heavy Consumer)
+*   `min_soc` = 30%
+*   `soc_hysteresis` = 10%
+*   `cycle_cost` = 3.0 kWh (30% of a 10kWh battery)
+*   **Result:** 30% + MAX(10%, 30%) = 30% + 30% = **60%**
 
 ---
 
@@ -138,5 +159,6 @@ A JSON object containing the full calculation details for the sidebar:
   "solar_gain_kwh": 5.2,
   "surplus_kwh": 1.5,
   "required_cycle_kwh": 1.2,
+  "required_cycle_soc_pct": 12.0,
   "forecast_hours": 12.5
 }

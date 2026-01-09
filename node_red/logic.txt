@@ -224,10 +224,18 @@ else {
             reason = `OFF. Sun & Batt Low (${currentForecastWatts.toFixed(0)}W, <${SAFE_BUFFER_SOC.toFixed(1)}%)`;
             debugInfo.state = "CURRENT_POWER_AND_SOC_LOW";
         } 
-        else {
+        // Switch ON if Forecast is at least as high as Base Load
+        else if(conf.base_load_w < currentForecastWatts){
             switchState = 0; // ON
             color = "green";
-            reason = `ON. Surplus: ${surplusKwh.toFixed(2)} kWh`;
+            reason = `ON. Forecast: ${currentForecastWatts.toFixed(0)}W >= Base Load: ${conf.base_load_w.toFixed(0)}W`;
+            debugInfo.state = "SURPLUS_ENOUGH";
+        }
+        else{
+            switchState = 1; // OFF
+            color = "yellow";
+            reason = `OFF. Forecast too low (${currentForecastWatts.toFixed(0)}W < ${conf.base_load_w.toFixed(0)}W)`;
+            debugInfo.state = "SURPLUS_TOO_LOW";
         }
     } 
     // 5. No Surplus
@@ -236,8 +244,10 @@ else {
         color = "yellow";
         if (surplusKwh > 0) {
             reason = `OFF. Surplus too low (${surplusKwh.toFixed(2)} < ${cycleCostKwh.toFixed(2)})`;
+            debugInfo.state = "SURPLUS_TOO_LOW";
         } else {
             reason = `OFF. Deficit: ${Math.abs(surplusKwh).toFixed(2)} kWh`;
+            debugInfo.state = "SURPLUS_IS_NEGATIVE";
         }
     }
 }
