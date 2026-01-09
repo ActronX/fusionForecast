@@ -1,8 +1,3 @@
-/**
- * CONTROL LOGIC (Direct Config + Safety Guard + Hysteresis FIX)
- * Expects msg.config.consumer from Template Node
- */
-
 // Safety check: Only check IF config exists
 if (!msg.config || !msg.config.consumer) {
     node.error("Critical Error: No configuration received!");
@@ -10,7 +5,7 @@ if (!msg.config || !msg.config.consumer) {
     return null; 
 }
 
-// --- CONFIGURATION VALIDATION (STRICT) ---
+// --- CONFIGURATION VALIDATION ---
 function requireVal(val, name) {
     const num = Number(val);
     if (isNaN(num) || num < 0) {
@@ -25,7 +20,7 @@ let conf;
 try {
     conf = {
         min_soc: requireVal(rawConf.min_soc, "min_soc"),
-        soc_hysteresis: Number(rawConf.soc_hysteresis) || 5.0, // Fallback allowed
+        soc_hysteresis: Number(rawConf.soc_hysteresis),
         min_runtime_minutes: requireVal(rawConf.min_runtime_minutes, "min_runtime_minutes"),
         battery_capacity_kwh: requireVal(rawConf.battery_capacity_kwh, "battery_capacity_kwh"),
         reserve_kwh: requireVal(rawConf.reserve_kwh, "reserve_kwh"),
@@ -44,7 +39,9 @@ try {
 const RECOVERY_SOC = Math.min(conf.min_soc + conf.soc_hysteresis, 100);
 
 // --- LOAD CONTEXT (MEMORY) ---
-// We track if we are currently in a "Low Battery Penalty Box"
+let lastState = context.get('lastState');
+if (lastState === undefined) lastState = 1; // Default: OFF (1)
+
 let lowBatLock = context.get('lowBatLock');
 if (lowBatLock === undefined) lowBatLock = false;
 
@@ -72,16 +69,8 @@ if (Array.isArray(msg.payload)) {
     if (currentSoc !== -1) dataValid = true;
 }
 
-// --- INITIALIZATION ---
-
-let switchState = 1; // Standard: OFF
-let reason = "";
-let color = "red";
-
-// --- UPDATE LOCK STATE ---
-// Before making decisions, update the lock based on current SoC
-
-// If we reached the target, release the lock
+// --- UPDATE LOCK STATE (RESET) ---
+// If we reached the target, release the lock immediately
 if (dataValid && currentSoc >= RECOVERY_SOC) {
     lowBatLock = false;
 }
@@ -91,7 +80,7 @@ let debugInfo = {
     state: "INIT",
     soc: currentSoc,
     config_used: conf,
-    low_bat_lock_active: lowBatLock, // Shows if we are in penalty mode
+    low_bat_lock_active: lowBatLock,
     hysteresis_recovery_target: RECOVERY_SOC,
     solar_gain_kwh: 0,
     base_loss_kwh: 0,
@@ -103,11 +92,14 @@ let debugInfo = {
 
 // --- LOGIC ---
 
+let switchState = 1; // Default OFF
+let reason = "";
+let color = "red";
+
 if (!dataValid) {
     reason = "Error: No Influx Data";
     color = "grey";
     debugInfo.state = "ERROR_NO_DATA";
-    switchState = 1; 
 } 
 else {
     // --- CALCULATION ---
@@ -143,7 +135,6 @@ else {
     const consumerKw = conf.consumer_power_w / 1000;
     const cycleCostKwh = consumerKw * (conf.min_runtime_minutes / 60);
 
-    // Debug Fill
     debugInfo.state = "CALCULATED";
     debugInfo.solar_gain_kwh = solarKwhSum;
     debugInfo.base_loss_kwh = baseLoadKwhSum;
@@ -154,21 +145,28 @@ else {
 
     const MIN_SAFE_HOURS = 2.0;
 
-    // --- DECISION LOGIC ---
+    // --- DECISION LOGIC (UPDATED) ---
 
-    // 1. Battery CRITICAL -> Activate Lock & OFF
+    // 1. Battery CRITICAL (Below Limit)
     if (currentSoc <= conf.min_soc) {
-        lowBatLock = true; // <--- LOCK ACTIVATED
+        // LOGIC CHANGE HERE:
+        // Only trigger the "Lock" (Penalty) if we were ON (0).
+        // If we were OFF (1), it's a natural drain (night), so we don't lock.
+        if (lastState === 0) {
+            lowBatLock = true;
+            debugInfo.state = "LOW_BATTERY_CRASH"; // Debug Info
+        } else {
+            debugInfo.state = "LOW_BATTERY_IDLE"; // Debug Info
+        }
+
         reason = `Low Battery (${currentSoc.toFixed(1)}% <= ${conf.min_soc}%)`;
-        debugInfo.state = "LOW_BATTERY_CUTOFF";
-        switchState = 1; 
+        switchState = 1; // OFF
         color = "red";
     }
     // 2. Battery RECOVERING (Lock is active) -> Stay OFF
-    // This only triggers if we HIT the bottom previously.
-    // If we are just "low but stable" (e.g. morning), this is skipped!
+    // This logic now only applies if 'lowBatLock' was actually set to true above.
     else if (lowBatLock === true) {
-        reason = `Recovering... Wait for ${RECOVERY_SOC}% (curr: ${currentSoc.toFixed(1)}%)`;
+        reason = `Hysteresis Lock... Wait for ${RECOVERY_SOC}% (curr: ${currentSoc.toFixed(1)}%)`;
         debugInfo.state = "HYSTERESIS_LOCKED";
         switchState = 1; 
         color = "blue";
@@ -200,6 +198,7 @@ else {
 
 // --- SAVE STATE ---
 context.set('lowBatLock', lowBatLock);
+context.set('lastState', switchState);
 
 msg.payload = switchState;
 msg.debug_calc = debugInfo;
