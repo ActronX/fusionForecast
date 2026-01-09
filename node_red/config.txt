@@ -1,7 +1,7 @@
 {
     "consumer": {
         "min_soc": 20.0,
-        "soc_hyteresis:": 20.0,
+        "soc_hysteresis": 20.0,
         "min_runtime_minutes": 30,
         "battery_capacity_kwh": 5.0,
         "reserve_kwh": 2.0,

@@ -10,11 +10,46 @@ if (!msg.config || !msg.config.consumer) {
     return null; 
 }
 
-// We use the config object directly as the source of truth
-const conf = msg.config.consumer;
+// --- INITIALIZATION ---
+
+let switchState = 1; // Standard: OFF
+let reason = "";
+let color = "red";
+
+// --- CONFIGURATION VALIDATION (STRICT) ---
+
+// Helper: validate number >= 0. Throws error if invalid.
+function requireVal(val, name) {
+    const num = Number(val);
+    if (isNaN(num) || num < 0) {
+        throw new Error(`Invalid valid for '${name}': ${val}`);
+    }
+    return num;
+}
+
+const rawConf = msg.config.consumer || {};
+let conf;
+
+try {
+    // Construct validated configuration object
+    conf = {
+        min_soc: requireVal(rawConf.min_soc, "min_soc"),
+        soc_hysteresis: requireVal(rawConf.soc_hysteresis, "soc_hysteresis"),
+        min_runtime_minutes: requireVal(rawConf.min_runtime_minutes, "min_runtime_minutes"),
+        battery_capacity_kwh: requireVal(rawConf.battery_capacity_kwh, "battery_capacity_kwh"),
+        reserve_kwh: requireVal(rawConf.reserve_kwh, "reserve_kwh"),
+        consumer_power_w: requireVal(rawConf.consumer_power_w, "consumer_power_w"),
+        base_load_w: requireVal(rawConf.base_load_w, "base_load_w"),
+        forecast_conversion_factor: requireVal(rawConf.forecast_conversion_factor, "forecast_conversion_factor")
+    };
+} catch (error) {
+    node.error(error.message);
+    node.status({fill: "grey", shape: "ring", text: "Config Error"});
+    return null; // Abort execution
+}
 
 // --- HYSTERESIS CONSTANTS ---
-const SOC_HYSTERESIS =  conf.soc_hyteresis; // Battery must charge a few % above min_soc before restarting
+const SOC_HYSTERESIS =  conf.soc_hysteresis; // Battery must charge a few % above min_soc before restarting
 
 // FIX: Ensure target never exceeds 100% to avoid infinite waiting
 const RECOVERY_SOC = Math.min(conf.min_soc + SOC_HYSTERESIS, 100);
@@ -51,12 +86,6 @@ if (Array.isArray(msg.payload)) {
     // Validation: We need at least the SoC
     if (currentSoc !== -1) dataValid = true;
 }
-
-// --- INITIALIZATION ---
-
-let switchState = 1; // Standard: OFF
-let reason = "";
-let color = "red";
 
 // Prepare debug object (fully initialized)
 let debugInfo = {

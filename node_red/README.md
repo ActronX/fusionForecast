@@ -77,8 +77,9 @@ Configuration is passed via `msg.config.consumer`.
 
 The logic node processes the data in the following order:
 
-### A. Data Validation
-Checks if the configuration exists and if the InfluxDB payload contains valid SoC and Forecast data.
+### A. Data Validation (Strict)
+1.  **Configuration Check:** Validates that all configuration parameters are numbers >= 0. If any value is invalid, the script **aborts immediately** with a "Config Error".
+2.  **Payload Check:** Checks if the InfluxDB payload contains valid SoC and Forecast data.
 
 ### B. Prediction Calculation
 1.  Iterates through the forecast list (up to 24h).
@@ -107,12 +108,13 @@ The Node-RED status dot provides immediate visual feedback:
 
 | Color | Status | Meaning |
 | :--- | :--- | :--- |
-| **RED** | CRITICAL | **Hard Cutoff.** Battery is below min_soc or Config is missing. |
+| **RED** | CRITICAL | **Hard Cutoff.** Battery is below min_soc. |
 | **BLUE** | WAITING | **Charging.** Battery is above minimum but has not reached the recovery target (+20%) yet. |
 | **BLACK**| SAFETY | **Data Issue.** Forecast horizon is too short (< 2h) to make a safe decision. |
 | **GREEN**| ON | **Active.** Sufficient solar surplus calculated. |
 | **ORANGE**| OFF | **Low Surplus.** System is healthy, but not enough sun to run the device. |
-| **GREY** | ERROR | **No Data.** InfluxDB query returned no valid payload. |
+| **GREY (Dot)** | ERROR | **No Data.** InfluxDB query returned no valid payload. |
+| **GREY (Ring)** | CONFIG | **Config Error.** Invalid configuration values detected (not a number or negative). Script execution aborted. |
 
 ---
 
