@@ -207,22 +207,32 @@ else {
         reason = `OFF. Forecast too short (${validHours}h < ${MIN_SAFE_HOURS}h)`;
         debugInfo.state = "SAFETY_GUARD_ACTIVE";
     }
-    // 4. Current Power Gate (BUFFERED)
-    // Switch off if current forecast is too weak AND battery is also weak (< Recovery Limit).
-    // If the battery is full enough (> Recovery), we allow "Cloud Buffering from battery". See 5. Surplus OK? -> ON
-    else if (currentForecastWatts < (conf.consumer_power_w + conf.base_load_w) && currentSoc < RECOVERY_SOC) {
-        switchState = 1; // OFF
-        color = "yellow";
-        reason = `OFF. Sun & Batt Low (${currentForecastWatts.toFixed(0)}W, ${currentSoc.toFixed(1)}%)`;
-        debugInfo.state = "CURRENT_POWER_AND_SOC_LOW";
-    }
-    // 5. Surplus OK? -> ON
+    // 4. Primary Check: Is there enough total Energy Surplus?
+    // We only proceed if the predicted excess energy (Surplus) is sufficient to cover the cost of running the device.
     else if (surplusKwh >= cycleCostKwh) {
-        switchState = 0; // ON
-        color = "green";
-        reason = `ON. Surplus: ${surplusKwh.toFixed(2)} kWh`;
+        
+        // Secondary Check: Momentary Power Implementation (Buffering)
+        // Even if we have enough daily surplus, we must ensure we can actually power the device NOW.
+        // We can run if EITHER:
+        //  A) The current solar power is strong enough to cover load + base load.
+        //  OR
+        //  B) The battery has enough charge (> RECOVERY_SOC) to "buffer" the load during clouds/low power.
+        //
+        // If BOTH are false (Low Sun AND Low Battery), we must wait, even if we have surplus.
+        if (currentForecastWatts < (conf.consumer_power_w + conf.base_load_w) && currentSoc < RECOVERY_SOC) {
+            switchState = 1; // OFF
+            color = "yellow";
+            reason = `OFF. Sun & Batt Low (${currentForecastWatts.toFixed(0)}W, ${currentSoc.toFixed(1)}%)`;
+            debugInfo.state = "CURRENT_POWER_AND_SOC_LOW";
+        } 
+        // Implementation: Surplus is sufficient AND we have power (Sun or Battery Buffer) -> GO
+        else {
+            switchState = 0; // ON
+            color = "green";
+            reason = `ON. Surplus: ${surplusKwh.toFixed(2)} kWh`;
+        }
     } 
-    // 6. No Surplus -> OFF
+    // 5. No Surplus -> OFF
     else {
         switchState = 1; // OFF
         color = "yellow";

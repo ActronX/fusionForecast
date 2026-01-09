@@ -93,14 +93,16 @@ The final switch state is determined by this priority list:
 1.  **Low Battery Cutoff (Color: RED):**
     * If SoC <= min_soc, the device is forced **OFF**.
 2.  **Hysteresis Recovery (Color: BLUE):**
-    * If the device was previously **OFF** and the battery is charging, it remains **OFF** until SoC >= (min_soc + 20%).
+    * If the device was previously **OFF** and the battery is charging, it remains **OFF** until SoC >= (min_soc + soc_hysteresis).
 3.  **Safety Guard (Color: BLACK):**
     * If valid forecast data covers less than **2.0 hours** (e.g., connection loss or end of day), the device is forced **OFF**.
-4.  **Current Power Gate (Color: YELLOW):**
-    *   If current solar power is too low AND battery is below recovery limit, the device is forced **OFF** (prevents draining battery when sun is gone).
-5.  **Surplus Decision (Color: GREEN or YELLOW):**
-    *   If Surplus kWh >= Cycle Cost: Switch **ON**.
-    *   Otherwise: Switch **OFF**.
+4.  **Surplus Decision (Color: GREEN):**
+    *   **Primary Check:** Is the predicted *Total Daily Surplus* >= Cycle Cost?
+    *   **Secondary Check (Buffering):** If yes, do we have enough *momentary power*?
+        *   If current solar power is low AND battery is low (< recovery limit), we wait (**YELLOW**).
+        *   If current solar power is high OR battery is full enough to buffer, we switch **ON** (**GREEN**).
+5.  **No Surplus (Color: YELLOW):**
+    *   If the Total Daily Surplus is insufficient, the device is switched **OFF**.
 
 ---
 
