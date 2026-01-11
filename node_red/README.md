@@ -95,7 +95,7 @@ The final switch state is determined by this priority list:
 2.  **Hysteresis Recovery (Color: BLUE):**
     * If the device was previously **OFF** and the battery is charging, it remains **OFF** until SoC >= (min_soc + soc_hysteresis).
 3.  **Safety Guard (Color: BLACK):**
-    * If **remaining usable sun hours** (where generation > base load) are less than **0.5 hours**, the device is forced **OFF**.
+    * If **remaining usable sun hours** (where generation > base load) are less than **2x min_runtime**, the device is forced **OFF**.
 4.  **Surplus Decision (Color: GREEN):**
     *   **Primary Check:** Is the predicted *Total Daily Surplus* >= Cycle Cost?
     *   **Secondary Check (Cloud Buffer Logic):** Even if daily surplus is high, we check if we can run *NOW* without crashing the battery.
@@ -136,7 +136,7 @@ The Node-RED status dot provides immediate visual feedback:
 | :--- | :--- | :--- |
 | **RED** | CRITICAL | **Hard Cutoff.** Battery is below min_soc. |
 | **BLUE** | WAITING | **Charging.** Battery is above minimum but has not reached the recovery target (+20%) yet. |
-| **BLACK**| SAFETY | **Data Issue.** Remaining usable sun too short (< 0.5h). |
+| **BLACK**| SAFETY | **Data Issue.** Remaining usable sun too short (< 2x min_runtime). |
 | **GREEN**| ON | **Active.** Sufficient solar surplus calculated. |
 | **YELLOW**| OFF | **Low Surplus.** System is healthy, but not enough sun to run the device. |
 | **GREY (Dot)** | ERROR | **No Data.** InfluxDB query returned no valid payload. |

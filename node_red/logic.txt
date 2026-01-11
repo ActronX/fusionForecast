@@ -193,7 +193,9 @@ else {
     debugInfo.cutoff_reason = cutoffReason;
     debugInfo.remaining_sun_hours = remainingSunHours;
 
-    const MIN_REMAINING_SUN_HOURS = 0.5; //0.5 hours
+    // Safety: We want at least enough sun hours for 2 full runtime cycles.
+    // If we decide to run in the second-to-last cycle, there is still one cycle left to charge.
+    const MIN_REMAINING_SUN_HOURS = 2 * (conf.min_runtime_minutes / 60);
 
     // --- DECISION LOGIC ---
 
@@ -218,10 +220,10 @@ else {
         color = "blue";
     }
     // 3. Safety Guard
-    else if (remainingSunHours < MIN_REMAINING_SUN_HOURS) {
+    else if (remainingSunHours <=  MIN_REMAINING_SUN_HOURS) {
         switchState = 1; 
         color = "black";
-        reason = `OFF. Remaining sun too short (${remainingSunHours}h < ${MIN_REMAINING_SUN_HOURS}h)`;
+        reason = `OFF. Remaining sun too short (${remainingSunHours}h <= ${MIN_REMAINING_SUN_HOURS}h)`;
         debugInfo.state = "SAFETY_GUARD_ACTIVE";
     }
     // 4. Primary Check: Is Surplus Enough?
