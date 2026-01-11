@@ -95,13 +95,14 @@ The final switch state is determined by this priority list:
 2.  **Hysteresis Recovery (Color: BLUE):**
     * If the device was previously **OFF** and the battery is charging, it remains **OFF** until SoC >= (min_soc + soc_hysteresis).
 3.  **Safety Guard (Color: BLACK):**
-    * If valid forecast data covers less than **2.0 hours** (e.g., connection loss or end of day), the device is forced **OFF**.
+    * If **remaining usable sun hours** (where generation > base load) are less than **0.5 hours**, the device is forced **OFF**.
 4.  **Surplus Decision (Color: GREEN):**
     *   **Primary Check:** Is the predicted *Total Daily Surplus* >= Cycle Cost?
-    *   **Secondary Check (Buffering):** If yes, can we run *NOW* without crashing the battery?
-        *   We calculate a **SAFE_BUFFER_SOC** (Min SOC + Hysteresis OR Cycle Cost, whichever is higher).
-        *   If **Battery < SAFE_BUFFER_SOC** AND **Current Forecast < Base Load**, we forced **OFF** (Waiting for Sun/Battery).
-        *   If **Battery > SAFE_BUFFER_SOC** OR **Current Forecast > Base Load**, we switch **ON**.
+    *   **Secondary Check (Cloud Buffer Logic):** Even if daily surplus is high, we check if we can run *NOW* without crashing the battery.
+        *   **Risk:** If we turn ON now, but the sun is weak and the battery is low, we might hit `min_soc` before the cycle finishes.
+        *   **Rule:** We calculate a **SAFE_BUFFER_SOC** (Min SOC + Hysteresis OR Cycle Cost, whichever is higher).
+        *   If **Battery < SAFE_BUFFER_SOC** AND **Current Forecast < Base Load**, we force **OFF** (Waiting for Sun/Battery).
+        *   Otherwise (Battery > SAFE_BUFFER_SOC OR Current Forecast > Base Load), we switch **ON**.
 5.  **No Surplus (Color: YELLOW):**
     *   If the Total Daily Surplus is insufficient, the device is switched **OFF**.
 
@@ -135,7 +136,7 @@ The Node-RED status dot provides immediate visual feedback:
 | :--- | :--- | :--- |
 | **RED** | CRITICAL | **Hard Cutoff.** Battery is below min_soc. |
 | **BLUE** | WAITING | **Charging.** Battery is above minimum but has not reached the recovery target (+20%) yet. |
-| **BLACK**| SAFETY | **Data Issue.** Forecast horizon is too short (< 2h) to make a safe decision. |
+| **BLACK**| SAFETY | **Data Issue.** Remaining usable sun too short (< 0.5h). |
 | **GREEN**| ON | **Active.** Sufficient solar surplus calculated. |
 | **YELLOW**| OFF | **Low Surplus.** System is healthy, but not enough sun to run the device. |
 | **GREY (Dot)** | ERROR | **No Data.** InfluxDB query returned no valid payload. |
@@ -160,5 +161,5 @@ A JSON object containing the full calculation details for the sidebar:
   "surplus_kwh": 1.5,
   "required_cycle_kwh": 1.2,
   "required_cycle_soc_pct": 12.0,
-  "forecast_hours": 12.5
+  "remaining_sun_hours": 12.5
 }

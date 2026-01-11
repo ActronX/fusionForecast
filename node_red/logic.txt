@@ -125,18 +125,21 @@ else {
     // --- CALCULATION ---
     let solarKwhSum = 0;
     let baseLoadKwhSum = 0;
-    let validHours = 0;
+    let remainingSunHours = 0;
     let cutoffReason = "End of data";
     
-    // Determine the current forecast power (Now)
+    // Determine current forecast power and remaining usable sun hours (generation > base load)
     let currentForecastWatts = 0;
     if (forecastList.length > 0) {
         const nowVal = Number(forecastList[0]._value);
         currentForecastWatts = nowVal * conf.forecast_conversion_factor;
     }
 
-    const timeStepHours = 0.25; 
+    const timeStepHours = 0.25; // 0.25h = 15 min
 
+    // Loop through forecast data to calculate total expected energy.
+    // We also calculate 'remainingSunHours', but ONLY counting periods where
+    // the generated power is sufficient to cover the house's base load.
     for (let point of forecastList) {
         const rawVal = Number(point._value);
         const generatedWatts = rawVal * conf.forecast_conversion_factor;
@@ -151,7 +154,7 @@ else {
 
         solarKwhSum += stepEnergy;
         baseLoadKwhSum += stepBaseLoad;
-        validHours += timeStepHours;
+        remainingSunHours += timeStepHours;
     }
 
     const currentEnergyKwh = (currentSoc / 100) * conf.battery_capacity_kwh;
@@ -171,9 +174,13 @@ else {
     // We divide by the battery efficiency to account for losses during discharge.
     const cycleCostSoc = (cycleCostKwh / conf.battery_capacity_kwh) * 100 /  BATTERY_EFFICIENCY;
     
-    // Define the Safe Buffer Level: 
-    // We use the MAXIMUM of either the Hysteresis Setting OR the Calculated Cycle Cost.
-    // This ensures we always have enough juice for at least one run.
+    // Define the Safe Buffer Level:
+    // This represents the minimum SoC we need to feel "safe" to turn on the load.
+    // It is the HIGHER value of:
+    // 1. The configured Hysteresis (e.g., 20% above min_soc)
+    // 2. The Energy Cost of one full run cycle (e.g. 15% SoC)
+    // This guarantees that if we switch ON, we have enough battery to finish the job
+    // even if the sun suddenly disappears.
     const SAFE_BUFFER_SOC = Math.min(conf.min_soc + Math.max(conf.soc_hysteresis, cycleCostSoc), 100);
 
     debugInfo.state = "CALCULATED";
@@ -184,9 +191,9 @@ else {
     debugInfo.required_cycle_kwh = cycleCostKwh;
     debugInfo.required_cycle_soc_pct = cycleCostSoc; // Show in Debug
     debugInfo.cutoff_reason = cutoffReason;
-    debugInfo.forecast_hours = validHours;
+    debugInfo.remaining_sun_hours = remainingSunHours;
 
-    const MIN_SAFE_HOURS = 2.0;
+    const MIN_REMAINING_SUN_HOURS = 0.5; //0.5 hours
 
     // --- DECISION LOGIC ---
 
@@ -211,18 +218,26 @@ else {
         color = "blue";
     }
     // 3. Safety Guard
-    else if (validHours < MIN_SAFE_HOURS) {
+    else if (remainingSunHours < MIN_REMAINING_SUN_HOURS) {
         switchState = 1; 
         color = "black";
-        reason = `OFF. Forecast too short (${validHours}h < ${MIN_SAFE_HOURS}h)`;
+        reason = `OFF. Remaining sun too short (${remainingSunHours}h < ${MIN_REMAINING_SUN_HOURS}h)`;
         debugInfo.state = "SAFETY_GUARD_ACTIVE";
     }
     // 4. Primary Check: Is Surplus Enough?
     else if (surplusKwh >= cycleCostKwh) {
         
-        // Secondary Check: "Cloud Buffer" Logic
-        // We only switch OFF if Sun is low AND Battery Buffer is insufficient.
-        // We use SAFE_BUFFER_SOC here to guarantee we can survive the min_runtime.
+        // Secondary Check: "Cloud Buffer" / Instant Power Logic
+        // Even if we have enough surplus for the whole day, we want to be careful 
+        // about running NOW if conditions are marginal.
+        //
+        // Risk: If we turn ON now, but the sun is weak and the battery is low,
+        // we might hit min_soc before the cycle finishes.
+        //
+        // Rule: Only allow switching OFF if:
+        // 1. Current Solar Power is NOT enough to run the device (we are draining battery)
+        // AND
+        // 2. Battery is below our SAFE_BUFFER_SOC (we don't have a buffer to drain)
         if (currentForecastWatts < (conf.consumer_power_w + conf.base_load_w) && currentSoc < SAFE_BUFFER_SOC) {
             switchState = 1; // OFF
             color = "yellow";
