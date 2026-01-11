@@ -107,7 +107,7 @@ let debugInfo = {
     required_cycle_kwh: 0,
     required_cycle_soc_pct: 0, 
     cutoff_reason: "",
-    forecast_hours: 0
+    remaining_sun_hours: 0
 };
 
 // --- LOGIC ---
