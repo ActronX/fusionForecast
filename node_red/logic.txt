@@ -160,11 +160,16 @@ else {
     const surplusKwh = projectedEnergy - targetEnergy;
     
     const consumerKw = conf.consumer_power_w / 1000;
+
     const cycleCostKwh = consumerKw * (conf.min_runtime_minutes / 60);
 
-    // Calculate SoC needed for one cycle
-    // Example: 1.5kWh needed / 10kWh Battery = 0.15 = 15% SoC needed
-    const cycleCostSoc = (cycleCostKwh / conf.battery_capacity_kwh) * 100;
+    // Factor in a margin for inefficiencies in the PV system and inverter. 
+    const BATTERY_EFFICIENCY = 0.85;
+  
+    // Calculate SoC needed for one cycle using the battery
+    // Example: 1.5kWh needed / 10kWh Battery = 0.15 = 15% SoC needed. 
+    // We divide by the battery efficiency to account for losses during discharge.
+    const cycleCostSoc = (cycleCostKwh / conf.battery_capacity_kwh) * 100 /  BATTERY_EFFICIENCY;
     
     // Define the Safe Buffer Level: 
     // We use the MAXIMUM of either the Hysteresis Setting OR the Calculated Cycle Cost.
