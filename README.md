@@ -220,14 +220,17 @@ crontab -e
 Add the following lines (adjust `/path/to/fusionForecast` to your installation path):
 
 ```cron
-# Fetch Future Weather Data (e.g. every hour at minute 15)
-15 * * * * /path/to/fusionForecast/fetch_future_weather.sh >> /path/to/fusionForecast/logs/fetch_future_weather.log 2>&1
+# Fetch Future Weather Data (e.g. every 15 minutes at minute 1, 16, 31, 46)
+1,16,31,46 * * * * /path/to/fusionForecast/fetch_future_weather.sh >> /path/to/fusionForecast/logs/fetch_future_weather.log 2>&1
 
-# Train the model every day at 03:00 AM
-0 3 * * * /path/to/fusionForecast/train.sh >> /path/to/fusionForecast/logs/train.log 2>&1
+# Create a forecast every 15 minutes (e.g. at minute 2, 17, 32, 47)
+2,17,32,47 * * * * /path/to/fusionForecast/forecast.sh >> /path/to/fusionForecast/logs/forecast.log 2>&1
 
-# Create a forecast every hour
-0 * * * * /path/to/fusionForecast/forecast.sh >> /path/to/fusionForecast/logs/forecast.log 2>&1
+# Fetch historic weather data once a month (e.g., 1st of the month at 01:00 AM)
+0 1 1 * * /path/to/fusionForecast/fetch_historic_weather.sh >> /path/to/fusionForecast/logs/fetch_historic.log 2>&1
+
+# Train the model once a month (e.g., 1st of the month at 02:00 AM)
+0 2 1 * * /path/to/fusionForecast/train.sh >> /path/to/fusionForecast/logs/train.log 2>&1
 ```
 
 Ensure the scripts are executable (`chmod +x *.sh`) and the path is absolute.
