@@ -1,6 +1,6 @@
 {
     "consumer": {
-        "min_soc": 30.0,
+        "min_soc": 30,
         "soc_hysteresis": 20.0,
         "min_runtime_minutes": 30,
         "battery_capacity_kwh": 5.0,
@@ -8,6 +8,6 @@
         "consumer_power_w": 1000.0,
         "base_load_w": 300.0,
         "forecast_conversion_factor": 1.0,
-        "battery_efficiency": 0.90  
+        "battery_efficiency": 0.85
     }
 }

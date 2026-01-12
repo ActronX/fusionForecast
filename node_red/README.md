@@ -30,7 +30,7 @@ To make this logic work, connect your Node-RED nodes in the following linear seq
 ### 2. Template Node (Configuration)
 * **Setting:** Set "Property" to `msg.config`.
 * **Format:** Select "JSON".
-* **Content:** Paste your configuration JSON here (e.g., `{"consumer": {"min_soc": 10, ...}}`).
+* **Content:** Paste your configuration JSON here (e.g., `{"consumer": {"min_soc": 10, "battery_efficiency": 0.90, ...}}`).
 * **Purpose:** Loads the static settings into the message **before** the query runs.
 
 ### 3. InfluxDB Node (Data Fetch)
@@ -70,6 +70,7 @@ Configuration is passed via `msg.config.consumer`.
 | consumer_power_w | Power consumption of the controlled device. | W |
 | min_runtime_minutes | Minimum runtime used to calculate "Cycle Cost". | min |
 | forecast_conversion_factor | Factor to convert Irradiance to AC Watts. | - |
+| battery_efficiency | Efficiency of the battery charging process (e.g. 0.90 for 90%). | - |
 
 ---
 
@@ -84,7 +85,7 @@ The logic node processes the data in the following order:
 ### B. Prediction Calculation
 1.  Iterates through the forecast list (up to 24h).
 2.  Calculates **Solar Yield** - **Base Load** = **Net Surplus**.
-3.  Determines the **Surplus kWh** available above the target (Battery Capacity + Reserve).
+3.  Determines the **Surplus kWh** available above the target (Battery Capacity + Reserve, adjusted for charging efficiency).
 4.  Compares this against the **Cycle Cost** (Energy needed to run the device for `min_runtime_minutes`).
 
 ### C. Safety & Decision Rules
@@ -157,9 +158,13 @@ A JSON object containing the full calculation details for the sidebar:
 {
   "state": "CALCULATED",
   "soc": 45.5,
+  "config_used": { ... },
+  "current_forecast_w": 1500,
   "solar_gain_kwh": 5.2,
+  "base_loss_kwh": 1.1,
   "surplus_kwh": 1.5,
   "required_cycle_kwh": 1.2,
   "required_cycle_soc_pct": 12.0,
-  "remaining_sun_hours": 12.5
+  "remaining_sun_hours": 12.5,
+  "cutoff_reason": "End of DB Forcast data"
 }

@@ -45,8 +45,13 @@ try {
         reserve_kwh: requireVal(rawConf.reserve_kwh, "reserve_kwh"),
         consumer_power_w: requireVal(rawConf.consumer_power_w, "consumer_power_w"),
         base_load_w: requireVal(rawConf.base_load_w, "base_load_w"),
-        forecast_conversion_factor: requireVal(rawConf.forecast_conversion_factor, "forecast_conversion_factor")
+        forecast_conversion_factor: requireVal(rawConf.forecast_conversion_factor, "forecast_conversion_factor"),
+        battery_efficiency: requireVal(rawConf.battery_efficiency || 0.85, "battery_efficiency") // Default to 0.85 if missing
     };
+
+    if (conf.battery_efficiency > 1.0) {
+        throw new Error(`Invalid value for 'battery_efficiency': ${conf.battery_efficiency}. Must be <= 1.0`);
+    }
 } catch (error) {
     node.error(error.message);
     node.status({fill: "grey", shape: "ring", text: "Config Error"});
@@ -54,7 +59,7 @@ try {
 }
 
 // --- HYSTERESIS CONSTANTS ---
-// This is used to release the lock after a crash
+// This is used to release the lock after a batterie crash
 const RECOVERY_SOC = Math.min(conf.min_soc + conf.soc_hysteresis, 100);
 
 // --- LOAD CONTEXT (MEMORY) ---
@@ -126,7 +131,7 @@ else {
     let solarKwhSum = 0;
     let baseLoadKwhSum = 0;
     let remainingSunHours = 0;
-    let cutoffReason = "End of data";
+    let cutoffReason = "End of DB Forcast data";
     
     // Determine current forecast power and remaining usable sun hours (generation > base load)
     let currentForecastWatts = 0;
@@ -145,7 +150,7 @@ else {
         const generatedWatts = rawVal * conf.forecast_conversion_factor;
         
         if (generatedWatts < conf.base_load_w) {
-            cutoffReason = `Power < BaseLoad`;
+            cutoffReason = `Night: PV Power < House BaseLoad`;
             break;
         }
 
@@ -157,17 +162,31 @@ else {
         remainingSunHours += timeStepHours;
     }
 
-    const currentEnergyKwh = (currentSoc / 100) * conf.battery_capacity_kwh;
-    const projectedEnergy = currentEnergyKwh + (solarKwhSum - baseLoadKwhSum);
-    const targetEnergy = conf.battery_capacity_kwh + conf.reserve_kwh;
-    const surplusKwh = projectedEnergy - targetEnergy;
     
+    // Factor in a margin for inefficiencies in the PV system and inverter. 
+    const BATTERY_EFFICIENCY = conf.battery_efficiency;
+
+    // Current Energy in Battery
+    const currentBatteryEnergyKwh = (currentSoc / 100) * conf.battery_capacity_kwh;
+
+    // Energy required to charge to 100% (including efficiency losses)
+    const currentChargeEnergyKwhNeeded = (conf.battery_capacity_kwh - currentBatteryEnergyKwh) / BATTERY_EFFICIENCY;    
+
+    // Projected Energy Outcome (Current + Gain - BaseConsumption)
+    const projectedEnergyEndOfDay = currentBatteryEnergyKwh + (solarKwhSum - baseLoadKwhSum);
+
+    // Target: Full Battery (with charge losses) + Reserve
+    const targetEnergyEndOfDay = currentBatteryEnergyKwh + currentChargeEnergyKwhNeeded + conf.reserve_kwh;
+
+    // Surplus: What is left after filling battery and keeping reserve?
+    const surplusKwh = projectedEnergyEndOfDay - targetEnergyEndOfDay;
+    
+    // Power consumption of the device in kW
     const consumerKw = conf.consumer_power_w / 1000;
 
+    // Energy cost for one minimum runtime cycle (e.g. 1 hour run = 2kWh)
     const cycleCostKwh = consumerKw * (conf.min_runtime_minutes / 60);
 
-    // Factor in a margin for inefficiencies in the PV system and inverter. 
-    const BATTERY_EFFICIENCY = 0.85;
   
     // Calculate SoC needed for one cycle using the battery
     // Example: 1.5kWh needed / 10kWh Battery = 0.15 = 15% SoC needed. 
