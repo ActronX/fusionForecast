@@ -46,12 +46,8 @@ try {
         consumer_power_w: requireVal(rawConf.consumer_power_w, "consumer_power_w"),
         base_load_w: requireVal(rawConf.base_load_w, "base_load_w"),
         forecast_conversion_factor: requireVal(rawConf.forecast_conversion_factor, "forecast_conversion_factor"),
-        battery_efficiency: requireVal(rawConf.battery_efficiency || 0.85, "battery_efficiency") // Default to 0.85 if missing
+        battery_efficiency: requireVal(rawConf.battery_efficiency, "battery_efficiency") 
     };
-
-    if (conf.battery_efficiency > 1.0) {
-        throw new Error(`Invalid value for 'battery_efficiency': ${conf.battery_efficiency}. Must be <= 1.0`);
-    }
 } catch (error) {
     node.error(error.message);
     node.status({fill: "grey", shape: "ring", text: "Config Error"});
@@ -265,7 +261,8 @@ else {
             reason = `OFF. Sun & Batt Low (${currentForecastWatts.toFixed(0)}W, <${SAFE_BUFFER_SOC.toFixed(1)}%)`;
             debugInfo.state = "CURRENT_POWER_AND_SOC_LOW";
         } 
-        // Switch ON if Forecast is at least as high as Base Load
+        // Switch ON if there is solar generation (Daytime).
+        // This prevents draining a full battery during the night.
         else if(conf.base_load_w < currentForecastWatts){
             switchState = 0; // ON
             color = "green";
