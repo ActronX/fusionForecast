@@ -171,8 +171,25 @@ else {
     // Projected Energy Outcome (Current + Gain - BaseConsumption)
     const projectedEnergyEndOfDay = currentBatteryEnergyKwh + (solarKwhSum - baseLoadKwhSum);
 
+    // Dynamic Reserve Logic (Quadratic "Safe"):
+    // We want to keep the reserve high for most of the time (safety first), 
+    // and only reduce it significantly when the battery is really getting full (>70%).
+    // Curve: Factor = 0.1 + 0.9 * (1 - (SoC_decimal ^ 2))
+    // 
+    // Examples (Formula: 0.1 + 0.9 * (1 - soc^2)):
+    // 0% SoC   -> 1.00 * Reserve (100% Safety)
+    // 30% SoC  -> 0.92 * Reserve (High Safety)
+    // 50% SoC  -> 0.78 * Reserve
+    // 80% SoC  -> 0.42 * Reserve (Risk allowed)
+    // 100% SoC -> 0.10 * Reserve (10% Hard Buffer remains)
+    
+    const socDecimal = Math.max(0, currentSoc / 100);
+    // Formula: 0.1 + (0.9 * (1 - soc^2))
+    const socFactor = 0.1 + (0.9 * (1 - Math.pow(socDecimal, 2)));
+    const dynamicReserve = conf.reserve_kwh * socFactor;
+    
     // Target: Full Battery (with charge losses) + Reserve
-    const targetEnergyEndOfDay = currentBatteryEnergyKwh + currentChargeEnergyKwhNeeded + conf.reserve_kwh;
+    const targetEnergyEndOfDay = currentBatteryEnergyKwh + currentChargeEnergyKwhNeeded + dynamicReserve;
 
     // Surplus: What is left after filling battery and keeping reserve?
     const surplusKwh = projectedEnergyEndOfDay - targetEnergyEndOfDay;
@@ -207,6 +224,7 @@ else {
     debugInfo.required_cycle_soc_pct = cycleCostSoc; // Show in Debug
     debugInfo.cutoff_reason = cutoffReason;
     debugInfo.remaining_sun_hours = remainingSunHours;
+    debugInfo.dynamic_reserve_kwh = dynamicReserve;
 
     // Safety: We want at least enough sun hours for 2 full runtime cycles.
     // If we decide to run in the second-to-last cycle, there is still one cycle left to charge.

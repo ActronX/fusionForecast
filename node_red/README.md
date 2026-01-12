@@ -65,7 +65,7 @@ Configuration is passed via `msg.config.consumer`.
 | min_soc | Critical battery level for emergency cutoff. | % |
 | soc_hysteresis | Recovery buffer above min_soc to prevents toggling. | % |
 | battery_capacity_kwh | Total capacity of the home battery. | kWh |
-| reserve_kwh | Safety buffer to ensure battery reaches 100% even if the forecast was too optimistic. | kWh |
+| reserve_kwh | Safety buffer to ensure battery reaches 100%. Scaled dynamically (100% Reserve at empty battery, down to **10% (Floor)** at full battery). | kWh |
 | base_load_w | Average house consumption to subtract from solar gain. | W |
 | consumer_power_w | Power consumption of the controlled device. | W |
 | min_runtime_minutes | Minimum runtime used to calculate "Cycle Cost". | min |
@@ -163,8 +163,9 @@ A JSON object containing the full calculation details for the sidebar:
   "solar_gain_kwh": 5.2,
   "base_loss_kwh": 1.1,
   "surplus_kwh": 1.5,
-  "required_cycle_kwh": 1.2,
   "required_cycle_soc_pct": 12.0,
   "remaining_sun_hours": 12.5,
+  "target_soc": 100,
+  "dynamic_reserve_kwh": 0.5,
   "cutoff_reason": "End of DB Forcast data"
 }
