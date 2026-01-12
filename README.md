@@ -242,6 +242,10 @@ Logs will be stored in the `logs/` directory (created automatically by `install_
 
 For users who want to use the forecast data to control physical devices (e.g., heating, EV charging), we provide a ready-to-use **Node-RED** flow.
 
+![Wiring](node_red/Wiring.jpg)
+
+`[Inject] --> [Template] --> [InfluxDB] --> [Function] --> [Output]`
+
 This flow implements intelligent logic to switch consumers based on:
 - Solar energy surplus
 - Battery SoC
