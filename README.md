@@ -250,5 +250,13 @@ This flow implements intelligent logic to switch consumers based on:
 - Solar energy surplus
 - Battery SoC
 - Forecast data
+- Actual solar performance
+
+It includes advanced protection features:
+
+Hysteresis: Prevents rapid toggling ("flip-flopping") by requiring a specific charge level recovery.
+Safety Guard: Prevents operation if forecast data is incomplete or outdated.
+Real-Time Forecast Correction: Dynamically adjusts the forecast curve ("Damping Factor") based on the actual solar performance since sunrise. If the day is cloudier/sunnier than predicted, the future forecast is scaled accordingly.
+Battery Protection: Hard cutoff when SoC is critically low.
 
 👉 **[Read the full Node-RED Documentation](node_red/README.md)**

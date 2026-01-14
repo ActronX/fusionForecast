@@ -9,7 +9,7 @@
  *
  * Inputs:
  * - msg.config: Configuration object (params like min_soc, capacity...)
- * - msg.payload: Array of InfluxDB data points (SoC + Forecast)
+ * - msg.payload: Array of InfluxDB data points (SoC + Forecast + Production)
  * - context.lastState: Previous switch state (1=OFF, 0=ON)
  * - context.lowBatLock: Safety lock that activates if battery crashes while load is ON
  *
@@ -140,9 +140,8 @@ if (conf.use_damping_factor) {
             }
         }
 
-        // Only apply if we have enough accumulated sun-hours data.
-        // Threshold: > 50% of Base Load (to avoid noise at sunrise).
-        if (sumForecastPast >  conf.base_load_w / 2.0) { 
+        // Only apply if we have enough accumulated sun-hours data. 8 samples needed for 2 h. 
+        if (sumForecastPast >  conf.base_load_w  / 2.0 * 8.0) { 
             dampingFactor = sumProductionPast / sumForecastPast;
             // Safety Clamping (0.75x to 1.5x) to prevent extreme scaling
             dampingFactor = Math.max(0.75, Math.min(dampingFactor, 1.5));
