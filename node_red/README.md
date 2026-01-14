@@ -204,15 +204,17 @@ A JSON object containing the full calculation details for the sidebar:
   "state": "CALCULATED",
   "soc": 45.5,
   "config_used": { ... },
+  "low_bat_lock_active": false,
+  "hysteresis_recovery_target": 50,
   "current_forecast_w": 1500,
+  "damping_factor": "1.02",
+  "past_analysis": "Matches:4 | Prod:1200 vs Fcst:1176 (OK)",
   "solar_gain_kwh": 5.2,
   "base_loss_kwh": 1.1,
   "surplus_kwh": 1.5,
+  "required_cycle_kwh": 2.1,
   "required_cycle_soc_pct": 12.0,
+  "cutoff_reason": "",
   "remaining_sun_hours": 12.5,
-  "target_soc": 100,
-  "dynamic_reserve_kwh": 0.5,
-  "damping_factor": "1.02",
-  "past_analysis": "Matches:4 | Prod:1200 vs Fcst:1176 (OK)",
-  "cutoff_reason": "End of DB Forcast data"
+  "dynamic_reserve_kwh": 0.5
 }
