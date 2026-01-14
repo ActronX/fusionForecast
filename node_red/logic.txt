@@ -46,7 +46,8 @@ try {
         consumer_power_w: requireVal(rawConf.consumer_power_w, "consumer_power_w"),
         base_load_w: requireVal(rawConf.base_load_w, "base_load_w"),
         forecast_conversion_factor: requireVal(rawConf.forecast_conversion_factor, "forecast_conversion_factor"),
-        battery_efficiency: requireVal(rawConf.battery_efficiency, "battery_efficiency") 
+        battery_efficiency: requireVal(rawConf.battery_efficiency, "battery_efficiency"),
+        use_damping_factor: rawConf.use_damping_factor !== undefined ? Boolean(rawConf.use_damping_factor) : true 
     };
 } catch (error) {
     node.error(error.message);
@@ -67,7 +68,8 @@ if (lowBatLock === undefined) lowBatLock = false;
 
 // --- EXTRACT DATA FROM INFLUX ---
 let currentSoc = -1; 
-let forecastList = [];
+let fullForecastList = [];
+let productionList = [];
 let dataValid = false;
 
 if (Array.isArray(msg.payload)) {
@@ -76,12 +78,19 @@ if (Array.isArray(msg.payload)) {
         currentSoc = Number(socObj._value);
     }
 
-    forecastList = msg.payload.filter(r => 
+    fullForecastList = msg.payload.filter(r => 
         r._field === "type_forecast" && r._time && r._value !== null
+    );
+    
+    // Extract Actual Production (History) for Damping Calculation
+    productionList = msg.payload.filter(r => 
+        r._field === "type_production" && r._time && r._value !== null
     );
 
     try {
-        forecastList.sort((a, b) => new Date(a._time).getTime() - new Date(b._time).getTime());
+        const timeSort = (a, b) => new Date(a._time).getTime() - new Date(b._time).getTime();
+        fullForecastList.sort(timeSort);
+        productionList.sort(timeSort);
     } catch (e) {
         node.warn("Error sorting: " + e.message);
     }
@@ -94,6 +103,84 @@ if (dataValid && currentSoc >= RECOVERY_SOC) {
     lowBatLock = false;
 }
 
+// --- DAMPING FACTOR CALCULATION ---
+// Concept: "Real-Time Forecast Correction"
+// We compare the ACTUAL production vs. the FORECAST since sunrise to calculate a "Performance Factor".
+// If the sun is stronger than predicted (Factor > 1.0), we scale UP the future forecast.
+// If it is cloudier than predicted (Factor < 1.0), we scale DOWN the future forecast.
+// This allows the system to react dynamically to intraday weather changes (e.g. fog clearing up earlier).
+const nowMs = Date.now();
+let dampingFactor = 1.0;
+let sumForecastPast = 0;
+let sumProductionPast = 0;
+
+let dampingReason = "OK";
+let matchCount = 0;
+
+if (conf.use_damping_factor) {
+    if (productionList.length > 0 && fullForecastList.length > 0) {
+        for (let prod of productionList) {
+            const pTime = new Date(prod._time).getTime();
+            if (pTime > nowMs) continue; // Skip future
+
+            // Find matching forecast (within 7.5 mins)
+            const match = fullForecastList.find(f => Math.abs(new Date(f._time).getTime() - pTime) < 7.5 * 60 * 1000);
+            
+            if (match) {
+                const fVal = Number(match._value) * conf.forecast_conversion_factor;
+                const pVal = Number(prod._value); // Assumed Watts
+                
+                // Only compare when significant power is expected (> 50% of Base Load)
+                // This implicitly filters for "since sunrise"
+                if (fVal > conf.base_load_w / 2.0) { 
+                     sumForecastPast += fVal;
+                     sumProductionPast += pVal;
+                     matchCount++;
+                }
+            }
+        }
+
+        // Only apply if we have enough accumulated sun-hours data.
+        // Threshold: > 50% of Base Load (to avoid noise at sunrise).
+        if (sumForecastPast >  conf.base_load_w / 2.0) { 
+            dampingFactor = sumProductionPast / sumForecastPast;
+            // Safety Clamping (0.75x to 1.5x) to prevent extreme scaling
+            dampingFactor = Math.max(0.75, Math.min(dampingFactor, 1.5));
+        } else {
+            dampingReason = "Insufficient Sun-Hours (Sums too low)";
+        }
+    } else {
+        if (productionList.length === 0 && fullForecastList.length === 0) dampingReason = "No Data (Prod & Fcst)";
+        else if (productionList.length === 0) dampingReason = "No Production Data";
+        else if (fullForecastList.length === 0) dampingReason = "No Forecast Data";
+    }
+} else {
+    dampingReason = "Disabled by Config";
+}
+
+// --- FILTER & ADJUST FORECAST ---
+// 1. Keep only FUTURE items for planning (from now onwards)
+// 2. Apply Damping Factor
+let forecastList = [];
+let currentForecastWatts = 0;
+
+if (fullForecastList.length > 0) {
+    // Include current 15-min window
+    const activeWindowStart = nowMs - (15 * 60 * 1000);
+    
+    forecastList = fullForecastList
+        .filter(f => new Date(f._time).getTime() >= activeWindowStart)
+        .map(item => {
+            // Apply Damping Factor
+            let val = Number(item._value);
+            return { ...item, _value: val * dampingFactor };
+        });
+
+    if (forecastList.length > 0) {
+        currentForecastWatts = Number(forecastList[0]._value) * conf.forecast_conversion_factor;
+    }
+}
+
 // Prepare debug object
 let debugInfo = {
     state: "INIT",
@@ -101,7 +188,9 @@ let debugInfo = {
     config_used: conf,
     low_bat_lock_active: lowBatLock,
     hysteresis_recovery_target: RECOVERY_SOC,
-    current_forecast_w: 0, 
+    current_forecast_w: currentForecastWatts, 
+    damping_factor: dampingFactor.toFixed(2),
+    past_analysis: `Matches:${matchCount} | Prod:${sumProductionPast.toFixed(0)} vs Fcst:${sumForecastPast.toFixed(0)} (${dampingReason})`,
     solar_gain_kwh: 0,
     base_loss_kwh: 0,
     surplus_kwh: 0,
@@ -130,12 +219,8 @@ else {
     let cutoffReason = "End of DB Forcast data";
     
     // Determine current forecast power and remaining usable sun hours (generation > base load)
-    let currentForecastWatts = 0;
-    if (forecastList.length > 0) {
-        const nowVal = Number(forecastList[0]._value);
-        currentForecastWatts = nowVal * conf.forecast_conversion_factor;
-    }
-
+    // const timeStepHours = 0.25; // 0.25h = 15 min // This line was moved from here
+    
     const timeStepHours = 0.25; // 0.25h = 15 min
 
     // Loop through forecast data to calculate total expected energy.

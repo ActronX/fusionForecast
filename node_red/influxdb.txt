@@ -15,12 +15,19 @@ soc_stream = from(bucket: "batterie")
 // 2. Get forecast curve (WITHOUT integral)
 // We take the mean every 15 minutes (15m) to avoid having too many data points
 forecast_stream = from(bucket: "forecast_results")
-  |> range(start: now(), stop: morgen_frueh)
+  |> range(start: heute_start, stop: morgen_frueh)
   |> filter(fn: (r) => r["_measurement"] == "production_forecast")
   |> filter(fn: (r) => r["_field"] == "power_produced_forecast")
   |> aggregateWindow(every: 15m, fn: mean, createEmpty: false)
   |> map(fn: (r) => ({r with _field: "type_forecast"}))
 
+production_stream = from(bucket: "batterie")
+  |> range(start: -2h, stop: 15m)
+  |> filter(fn: (r) => r["_measurement"] == "pv")
+  |> filter(fn: (r) => r["_field"] == "W") 
+  |> aggregateWindow(every: 15m, fn: mean, createEmpty: false)
+  |> map(fn: (r) => ({r with _field: "type_production"}))
+
 // 3. Union
-union(tables: [soc_stream, forecast_stream])
+union(tables: [soc_stream, forecast_stream, production_stream])
   |> keep(columns: ["_time", "_field", "_value"])

@@ -9,6 +9,7 @@ Instead of simple threshold switching, it calculates the **projected solar energ
 It includes advanced protection features:
 * **Hysteresis:** Prevents rapid toggling ("flip-flopping") by requiring a specific charge level recovery.
 * **Safety Guard:** Prevents operation if forecast data is incomplete or outdated.
+* **Real-Time Forecast Correction:** Dynamically adjusts the forecast curve ("Damping Factor") based on the actual solar performance since sunrise. If the day is cloudier/sunnier than predicted, the future forecast is scaled accordingly.
 * **Battery Protection:** Hard cutoff when SoC is critically low.
 
 ---
@@ -53,9 +54,16 @@ To make this logic work, connect your Node-RED nodes in the following linear seq
 ### 1. Data Source (InfluxDB)
 The flow expects an input message containing an array of objects from an InfluxDB Flux query.
 * **Aggregation:** Data should be aggregated into 15-minute windows to optimize performance.
-* **Required Fields:**
-    * "type_soc": Current Battery State of Charge (%).
-    * "type_forecast": Solar Irradiance Forecast (W).
+* **Required Fields & Time Ranges:**
+    
+    | Field Name | Description | Needed Time Range |
+    |Str |Str |Str |
+    | :--- | :--- | :--- |
+    | `type_soc` | Battery State of Charge (%) | Current Value (last 1h) |
+    | `type_forecast` | Solar Power Forecast (W) | **History** (since sunrise) AND **Future** (next 24-48h) |
+    | `type_production` | Actual Solar Production (W) | **History** (since sunrise) |
+
+    > **Important:** The logic matches `type_production` and `type_forecast` timestamps to calculate the Damping Factor. Ensure both have the same time grid (e.g. 15-min aligned) and availability for the *past* hours of the current day.
 
 ### 2. Configuration (Template Node)
 Configuration is passed via `msg.config.consumer`.
@@ -71,6 +79,7 @@ Configuration is passed via `msg.config.consumer`.
 | min_runtime_minutes | Minimum runtime used to calculate "Cycle Cost". | min |
 | forecast_conversion_factor | Factor to convert Irradiance to AC Watts. | - |
 | battery_efficiency | Efficiency of the battery charging process (e.g. 0.90 for 90%). | - |
+| use_damping_factor | Enable/Disable real-time forecast correction (true/false). | - |
 
 ---
 
@@ -88,14 +97,26 @@ The logic node processes the data in the following order:
 3.  Determines the **Surplus kWh** available above the target (Battery Capacity + Reserve, adjusted for charging efficiency).
 4.  Compares this against the **Cycle Cost** (Energy needed to run the device for `min_runtime_minutes`).
 
-### C. Safety & Decision Rules
+### C. Real-Time Correction (Damping Factor)
+Before making decisions, the script compares the **Forecast** vs. **Actual Production** since sunrise (or start of data).
+
+*   **Goal:** Detect if the day is persistently better or worse than predicted (e.g., unexpected fog or clear sky).
+*   **Logic:**
+    1.  Sum up all historical forecast values (since midnight/sunrise).
+    2.  Sum up all actual production values for the same timepoints.
+    3.  Calculate `Factor = Sum(Actual) / Sum(Forecast)`.
+    4.  **Clamp:** The factor is limited to a safety range (e.g., **0.75x** to **1.50x**) to prevent extreme distortion.
+    5.  **Apply:** All *future* forecast data points are multiplied by this factor before further calculation.
+*   **Threshold:** This correction is only applied if the accumulated forecast energy exceeds **50% of the Base Load** (to avoid mathematical noise at dawn/dusk).
+
+### D. Safety & Decision Rules
 The final switch state is determined by this priority list:
 
 1.  **Low Battery Cutoff (Color: RED):**
     * If SoC <= min_soc, the device is forced **OFF**.
-2.  **Hysteresis Recovery (Color: BLUE):**
+2.  **Hysteresis Recovery (Color: BLUE):
     * If the device was previously **OFF** and the battery is charging, it remains **OFF** until SoC >= (min_soc + soc_hysteresis).
-3.  **Safety Guard (Color: BLACK):**
+3.  **Safety Guard (Color: BLACK):
     * If **remaining usable sun hours** (where generation > base load) are less than **2x min_runtime**, the device is forced **OFF**.
 4.  **Surplus Decision (Color: GREEN):**
     *   **Primary Check:** Is the predicted *Total Daily Surplus* >= Cycle Cost?
@@ -167,5 +188,7 @@ A JSON object containing the full calculation details for the sidebar:
   "remaining_sun_hours": 12.5,
   "target_soc": 100,
   "dynamic_reserve_kwh": 0.5,
+  "damping_factor": "1.02",
+  "past_analysis": "Matches:4 | Prod:1200 vs Fcst:1176 (OK)",
   "cutoff_reason": "End of DB Forcast data"
 }
