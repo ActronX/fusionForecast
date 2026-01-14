@@ -246,17 +246,12 @@ For users who want to use the forecast data to control physical devices (e.g., h
 
 `[Inject] --> [Template] --> [InfluxDB] --> [Function] --> [Output]`
 
-This flow implements intelligent logic to switch consumers based on:
-- Solar energy surplus
-- Battery SoC
-- Forecast data
-- Actual solar performance
+Instead of simple threshold switching, it calculates the **projected solar energy surplus** for the next 24 hours. It switches the consumer **ON** only if the surplus is sufficient to cover the runtime costs without draining the home battery below a reserved level.
 
 It includes advanced protection features:
-
-Hysteresis: Prevents rapid toggling ("flip-flopping") by requiring a specific charge level recovery.
-Safety Guard: Prevents operation if forecast data is incomplete or outdated.
-Real-Time Forecast Correction: Dynamically adjusts the forecast curve ("Damping Factor") based on the actual solar performance since sunrise. If the day is cloudier/sunnier than predicted, the future forecast is scaled accordingly.
-Battery Protection: Hard cutoff when SoC is critically low.
+* **Hysteresis:** Prevents rapid toggling ("flip-flopping") by requiring a specific charge level recovery.
+* **Safety Guard:** Prevents operation if forecast data is incomplete or outdated.
+* **Real-Time Forecast Correction:** Dynamically adjusts the forecast curve ("Damping Factor") based on the actual solar performance since sunrise. If the day is cloudier/sunnier than predicted, the future forecast is scaled accordingly.
+* **Battery Protection:** Hard cutoff when SoC is critically low.
 
 👉 **[Read the full Node-RED Documentation](node_red/README.md)**
