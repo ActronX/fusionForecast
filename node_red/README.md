@@ -8,6 +8,7 @@ Instead of simple threshold switching, it calculates the **projected solar energ
 
 It includes advanced protection features:
 * **Hysteresis:** Prevents rapid toggling ("flip-flopping") by requiring a specific charge level recovery.
+* **Dynamic Reserve:** Maintains a high safety buffer when battery is low, but reduces it when battery is full to maximize capacity usage.
 * **Safety Guard:** Prevents operation if forecast data is incomplete or outdated.
 * **Real-Time Forecast Correction:** Dynamically adjusts the forecast curve ("Damping Factor") based on the actual solar performance since sunrise. If the day is cloudier/sunnier than predicted, the future forecast is scaled accordingly.
 * **Battery Protection:** Hard cutoff when SoC is critically low.
@@ -97,7 +98,21 @@ The logic node processes the data in the following order:
 3.  Determines the **Surplus kWh** available above the target (Battery Capacity + Reserve, adjusted for charging efficiency).
 4.  Compares this against the **Cycle Cost** (Energy needed to run the device for `min_runtime_minutes`).
 
-### C. Real-Time Correction (Damping Factor)
+### C. Dynamic Reserve Logic (Safety Curve)
+To balance safety (don't run out of battery) with efficiency (maximize self-consumption), the `reserve_kwh` is **not static**.
+
+*   **Concept:**
+    *   **Low SoC:** We keep 100% of the configured reserve (Safety First).
+    *   **High SoC:** We reduce the reserve significantly (Trusting the full battery).
+    *   **Curve:** "Quadratic Safe" -> `Factor = 0.1 + 0.9 * (1 - (SoC_decimal ^ 2))`
+
+*   **Examples:**
+    *   **0% SoC:** 100% of Configured Reserve.
+    *   **50% SoC:** ~78% of Configured Reserve.
+    *   **80% SoC:** ~42% of Configured Reserve.
+    *   **100% SoC:** 10% of Configured Reserve (Minimum Floor).
+
+### D. Real-Time Correction (Damping Factor)
 Before making decisions, the script compares the **Forecast** vs. **Actual Production** from recent history (e.g. last 2 hours).
 
 *   **Goal:** Detect if the day is persistently better or worse than predicted (e.g., unexpected fog or clear sky).
@@ -110,7 +125,7 @@ Before making decisions, the script compares the **Forecast** vs. **Actual Produ
         *   **Why?** Weather anomalies (like a passing cloud or morning fog) are often temporary.
         *   **Concept:**
             *   **Short-Term (0-1h):** We trust our *local* 'Live-Correction' fully. If it's foggy now, it will likely be foggy in 30 mins.
-            *   **Long-Term (2h+):** We trust the *global* 'DWD Forecast' again. The fog will likely clear up, and the original prediction becomes valid again.
+            *   **Long-Term (2h+):** We trust the *global* 'Weather Forecast' again. The fog will likely clear up, and the original prediction becomes valid again.
         *   **Effect:**
             *   **Now (0h):** 100% Influence.
             *   **+1h:** 50% Influence.
@@ -118,7 +133,7 @@ Before making decisions, the script compares the **Forecast** vs. **Actual Produ
             *   **+4h:** ~6% Influence (Back to original Forecast).
 *   **Threshold:** This correction is only applied if the accumulated forecast energy exceeds **50% of the Base Load** (to avoid mathematical noise at dawn/dusk).
 
-### D. Safety & Decision Rules
+### E. Safety & Decision Rules
 The final switch state is determined by this priority list:
 
 1.  **Low Battery Cutoff (Color: RED):**
