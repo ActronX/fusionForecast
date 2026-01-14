@@ -61,7 +61,7 @@ The flow expects an input message containing an array of objects from an InfluxD
     | :--- | :--- | :--- |
     | `type_soc` | Battery State of Charge (%) | Current Value (last 1h) |
     | `type_forecast` | Solar Power Forecast (W) | **History** (since sunrise) AND **Future** (next 24-48h) |
-    | `type_production` | Actual Solar Production (W) | **History** (since sunrise) |
+    | `type_production` | Actual Solar Production (W) | **History** (last 2h sufficient) |
 
     > **Important:** The logic matches `type_production` and `type_forecast` timestamps to calculate the Damping Factor. Ensure both have the same time grid (e.g. 15-min aligned) and availability for the *past* hours of the current day.
 
@@ -98,15 +98,24 @@ The logic node processes the data in the following order:
 4.  Compares this against the **Cycle Cost** (Energy needed to run the device for `min_runtime_minutes`).
 
 ### C. Real-Time Correction (Damping Factor)
-Before making decisions, the script compares the **Forecast** vs. **Actual Production** since sunrise (or start of data).
+Before making decisions, the script compares the **Forecast** vs. **Actual Production** from recent history (e.g. last 2 hours).
 
 *   **Goal:** Detect if the day is persistently better or worse than predicted (e.g., unexpected fog or clear sky).
 *   **Logic:**
-    1.  Sum up all historical forecast values (since midnight/sunrise).
+    1.  Sum up all historical forecast values (last 2h).
     2.  Sum up all actual production values for the same timepoints.
     3.  Calculate `Factor = Sum(Actual) / Sum(Forecast)`.
     4.  **Clamp:** The factor is limited to a safety range (e.g., **0.75x** to **1.50x**) to prevent extreme distortion.
-    5.  **Apply:** All *future* forecast data points are multiplied by this factor before further calculation.
+    5.  **Apply (Decaying Influence):** The damping factor is applied to the forecast curve with a **time-based decay** (Half-Life: 1h).
+        *   **Why?** Weather anomalies (like a passing cloud or morning fog) are often temporary.
+        *   **Concept:**
+            *   **Short-Term (0-1h):** We trust our *local* 'Live-Correction' fully. If it's foggy now, it will likely be foggy in 30 mins.
+            *   **Long-Term (2h+):** We trust the *global* 'DWD Forecast' again. The fog will likely clear up, and the original prediction becomes valid again.
+        *   **Effect:**
+            *   **Now (0h):** 100% Influence.
+            *   **+1h:** 50% Influence.
+            *   **+2h:** 25% Influence.
+            *   **+4h:** ~6% Influence (Back to original Forecast).
 *   **Threshold:** This correction is only applied if the accumulated forecast energy exceeds **50% of the Base Load** (to avoid mathematical noise at dawn/dusk).
 
 ### D. Safety & Decision Rules

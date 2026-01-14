@@ -47,7 +47,7 @@ try {
         base_load_w: requireVal(rawConf.base_load_w, "base_load_w"),
         forecast_conversion_factor: requireVal(rawConf.forecast_conversion_factor, "forecast_conversion_factor"),
         battery_efficiency: requireVal(rawConf.battery_efficiency, "battery_efficiency"),
-        use_damping_factor: rawConf.use_damping_factor !== undefined ? Boolean(rawConf.use_damping_factor) : true 
+        use_damping_factor: rawConf.use_damping_factor !== undefined ? Boolean(rawConf.use_damping_factor) : false   
     };
 } catch (error) {
     node.error(error.message);
@@ -171,9 +171,39 @@ if (fullForecastList.length > 0) {
     forecastList = fullForecastList
         .filter(f => new Date(f._time).getTime() >= activeWindowStart)
         .map(item => {
-            // Apply Damping Factor
+            // Apply Damping Factor with Time Decay
+            // Formula: Weight = 0.5 ^ (hours_future / 2)
+            // Meaning: 100% influence now, 50% in 2h, 25% in 4h, ...
             let val = Number(item._value);
-            return { ...item, _value: val * dampingFactor };
+            
+            if (conf.use_damping_factor) {
+                 const itemTime = new Date(item._time).getTime();
+                 
+                 // Difference in hours between NOW and this future forecast point
+                 // (Math.max to ensure we don't handle negative past times weirdly, although they are filtered)
+                 const diffHours = Math.max(0, (itemTime - nowMs) / (1000 * 60 * 60));
+                 
+                 // --- TIME DECAY LOGIC ---
+                 // We trust the current deviation (Damping Factor) fully for the immediate moment.
+                 // However, weather anomalies (clouds, fog) are often temporary.
+                 // We don't want to scale the forecast 10 hours away based on a cloud right now.
+                 //
+                 // Formula: Weight = 0.5 ^ (hours / 1.0)
+                 // This is an "Exponential Decay" with a Half-Life of 1 hour.
+                 // - T+0h: Weight 100% -> Full influence of Damping Factor
+                 // - T+1h: Weight  50% -> Half influence
+                 // - T+2h: Weight  25% -> Quarter influence
+                 // - T+4h: Weight   6% -> Nearly back to original Forecast (1.0)
+                 const decayWeight = Math.pow(0.5, diffHours / 1.0);
+                 
+                 // Calculate Effective Factor for this specific time point
+                 // We blend the calculated "dampingFactor" with standard "1.0" based on the weight.
+                 const effectiveFactor = 1.0 + ((dampingFactor - 1.0) * decayWeight);
+                 
+                 val = val * effectiveFactor;
+            }
+            
+            return { ...item, _value: val };
         });
 
     if (forecastList.length > 0) {
