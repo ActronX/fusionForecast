@@ -331,7 +331,9 @@ else {
     // even if the sun suddenly disappears.
     // This guarantees that if we switch ON, we have enough battery to finish the job
     // even if the sun suddenly disappears.
-    const requiredSafeBufferSoc = conf.min_soc + Math.max(conf.soc_hysteresis, cycleCostSoc);
+    // If support is disabled, we only need the hysteresis buffer.
+    const neededBuffer = conf.allow_battery_support ? Math.max(conf.soc_hysteresis, cycleCostSoc) : conf.soc_hysteresis;
+    const requiredSafeBufferSoc = conf.min_soc + neededBuffer;
     
     if (requiredSafeBufferSoc > 100) {
         const err = `Safety Buffer ${requiredSafeBufferSoc.toFixed(1)}% > 100%. Battery too small for consumer_power/min_runtime!`;
