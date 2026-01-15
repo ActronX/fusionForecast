@@ -306,19 +306,26 @@ else {
 
     // Dynamic Reserve Logic (Quadratic "Safe"):
     // We want to keep the reserve high for most of the time (safety first), 
-    // and only reduce it significantly when the battery is really getting full (>70%).
+    // and only reduce it significantly when the battery is really getting full (>80%).
     // Curve: Factor = 0.1 + 0.9 * (1 - (SoC_decimal ^ 2))
     // 
-    // Examples (Formula: 0.1 + 0.9 * (1 - soc^2)):
+    // Examples (Formula scaled to 95% as Full):
     // 0% SoC   -> 1.00 * Reserve (100% Safety)
-    // 30% SoC  -> 0.92 * Reserve (High Safety)
-    // 50% SoC  -> 0.78 * Reserve
-    // 80% SoC  -> 0.42 * Reserve (Risk allowed)
-    // 100% SoC -> 0.10 * Reserve (10% Hard Buffer remains)
+    // 30% SoC  -> 0.91 * Reserve (High Safety)
+    // 50% SoC  -> 0.75 * Reserve
+    // 80% SoC  -> 0.36 * Reserve (Risk allowed)
+    // 95% SoC  -> 0.10 * Reserve (Minimum Safe-Floor reached)
+    // 100% SoC -> 0.10 * Reserve (Minimum Safe-Floor reached)
     
-    const socDecimal = Math.max(0, currentSoc / 100);
-    // Formula: 0.1 + (0.9 * (1 - soc^2))
-    const socFactor = 0.1 + (0.9 * (1 - Math.pow(socDecimal, 2)));
+    // We want the curve to reach its end (Factor 0.1) already at 95% SoC.
+    // Reason: Charging speed drops significantly >95%. We consider 95% as "effectively full" for planning.
+    // Mathematical Trick: We scale the input. 95% becomes "Virtual 100%".
+    // 0.95 / 0.95 = 1.0 -> Formula returns 0.1
+    // 1.00 / 0.95 = 1.05 -> clamped to 1.0 -> Formula returns 0.1
+    const effectiveSoc = Math.min(1, socDecimal / 0.95);
+    
+    // Formula: 0.1 + (0.9 * (1 - effective_soc^2))
+    const socFactor = 0.1 + (0.9 * (1 - Math.pow(effectiveSoc, 2)));
     const dynamicReserve = conf.reserve_kwh * socFactor;
     
     // Target: Full Battery (with charge losses) + Reserve
