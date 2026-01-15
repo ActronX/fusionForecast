@@ -74,6 +74,7 @@ Configuration is passed via `msg.config.consumer`.
 | min_soc | Critical battery level for emergency cutoff. | % |
 | soc_hysteresis | Recovery buffer above min_soc to prevents toggling. | % |
 | battery_capacity_kwh | Total capacity of the home battery. | kWh |
+| pv_peak_power_w | Maximum physical power output of the PV system. Used for sanity checks and limits. | W |
 | reserve_kwh | Safety buffer to ensure battery reaches 100%. Scaled dynamically (100% Reserve at empty battery, down to **10% (Floor)** at full battery). | kWh |
 | base_load_w | Average house consumption to subtract from solar gain. | W |
 | consumer_power_w | Power consumption of the controlled device. | W |
@@ -131,7 +132,8 @@ Before making decisions, the script compares the **Forecast** vs. **Actual Produ
             *   **+1h:** 50% Influence.
             *   **+2h:** 25% Influence.
             *   **+4h:** ~6% Influence (Back to original Forecast).
-*   **Threshold:** This correction is only applied if the accumulated forecast energy exceeds **50% of the Base Load** (to avoid mathematical noise at dawn/dusk).
+*   **Threshold:** This correction is only applied if the accumulated forecast energy exceeds **3% of the PV Peak Power** (to avoid mathematical noise at dawn/dusk).
+*   **Physical Limit:** The adjusted forecast value is capped at `pv_peak_power_w` to ensure values remain within realistic system limits.
 
 ### E. Safety & Decision Rules
 The final switch state is determined by this priority list:
@@ -215,6 +217,6 @@ A JSON object containing the full calculation details for the sidebar:
   "required_cycle_kwh": 2.1,
   "required_cycle_soc_pct": 12.0,
   "cutoff_reason": "",
-  "remaining_sun_hours": 12.5,
+  "remaining_sun_hours": 6.5,
   "dynamic_reserve_kwh": 0.5
 }

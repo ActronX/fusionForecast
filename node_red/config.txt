@@ -1,9 +1,10 @@
 {
     "consumer": {
-        "min_soc": 30,
+        "min_soc": 20,
         "soc_hysteresis": 20.0,
         "min_runtime_minutes": 30,
         "battery_capacity_kwh": 5.0,
+        "pv_peak_power_w": 5200.0,
         "reserve_kwh": 2.0,
         "consumer_power_w": 1000.0,
         "base_load_w": 300.0,
