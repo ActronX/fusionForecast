@@ -391,16 +391,25 @@ else {
         if (currentForecastWatts < (conf.consumer_power_w + conf.base_load_w) && currentSoc < SAFE_BUFFER_SOC) {
             switchState = 1; // OFF
             color = "yellow";
-            reason = `OFF. Sun & Batt Low (${currentForecastWatts.toFixed(0)}W, <${SAFE_BUFFER_SOC.toFixed(1)}%)`;
+            reason = `OFF. Filling Battery (${currentForecastWatts.toFixed(0)}W, ${currentSoc.toFixed(1)}% < ${SAFE_BUFFER_SOC.toFixed(1)}%)`;
             debugInfo.state = "CURRENT_POWER_AND_SOC_LOW";
         } 
-        // Switch ON if there is solar generation (Daytime).
+        // Do we have enough power for EVERYTHING (Base + Consumer)?
+        else if((conf.base_load_w + conf.consumer_power_w) < currentForecastWatts){
+            switchState = 0; // ON
+            color = "green";
+            // If the forecast is higher than the base load + consumer power, we can switch ON
+            reason = `ON. Forecast: ${currentForecastWatts.toFixed(0)}W >= ${(conf.base_load_w + conf.consumer_power_w).toFixed(0)}W`;
+            debugInfo.state = "SURPLUS_ENOUGH";
+        }
+        // Do we have at least enough for Base Load? (Draining battery for consumer)
         // This prevents draining a full battery during the night.
         else if(conf.base_load_w < currentForecastWatts){
             switchState = 0; // ON
             color = "green";
-            reason = `ON. Forecast: ${currentForecastWatts.toFixed(0)}W >= Base Load: ${conf.base_load_w.toFixed(0)}W`;
-            debugInfo.state = "SURPLUS_ENOUGH";
+            // If the forecast is higher than the base load, we can switch ON
+            reason = `ON. Draining Battery: ${currentForecastWatts.toFixed(0)}W < ${(conf.base_load_w + conf.consumer_power_w).toFixed(0)}W`;
+            debugInfo.state = "SURPLUS_DRAINING";
         }
         else{
             switchState = 1; // OFF

@@ -147,10 +147,14 @@ The final switch state is determined by this priority list:
     *   **Primary Check:** Is the predicted *Total Daily Surplus* >= Cycle Cost?
     *   **Secondary Check (Cloud Buffer Logic):** Even if daily surplus is high, we check if we can run *NOW* without crashing the battery.
         *   **Risk:** If we turn ON now, but the sun is weak and the battery is low, we might hit `min_soc` before the cycle finishes.
-        *   **Rule:** We calculate a **SAFE_BUFFER_SOC** (Min SOC + Hysteresis OR Cycle Cost, whichever is higher).
-        *   If **Battery < SAFE_BUFFER_SOC** AND **Current Forecast < Base Load**, we force **OFF** (Waiting for Sun/Battery).
-        *   Otherwise (Battery > SAFE_BUFFER_SOC OR Current Forecast > Base Load), we switch **ON**.
-5.  **No Surplus (Color: YELLOW):**
+        *   **Rule:** Only allow switching OFF if:
+            1.  Current Solar Power is **NOT** enough to run the device (we are draining battery)
+            2.  **AND** Battery is below our `SAFE_BUFFER_SOC` (we don't have a buffer to drain)
+        *   **Otherwise (Switch ON):**
+            *   **Full Power:** Forecast > (Base Load + Consumer) -> **ON**.
+            *   **Battery Support:** Forecast > Base Load -> **ON** (Draining Battery slightly, but using Solar).
+
+6.  **No Surplus (Color: YELLOW):**
     *   If the Total Daily Surplus is insufficient, the device is switched **OFF**.
 
 ---
