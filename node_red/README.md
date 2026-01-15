@@ -132,7 +132,7 @@ Before making decisions, the script compares the **Forecast** vs. **Actual Produ
             *   **+1h:** 50% Influence.
             *   **+2h:** 25% Influence.
             *   **+4h:** ~6% Influence (Back to original Forecast).
-    6.  **Weighted History** The comparison of *historical* data (Forecast vs. Production) also uses **Exponential Decay** (Half-Life: 1h).
+    6.  **Weighted History** The comparison of *historical* data (Forecast vs. Production) also uses **time-based decay** (Half-Life: 1h).
         *   **Why?** To react faster to changing weather (e.g. fog clearing). Data from 2 hours ago is faded out to prioritize the current trend.
     7.  **Threshold:** This correction is only applied if the accumulated forecast energy exceeds **3% of the PV Peak Power** (to avoid mathematical noise at dawn/dusk).
     8.  **Physical Limit:** The adjusted forecast value is capped at `pv_peak_power_w` to ensure values remain within realistic system limits.
