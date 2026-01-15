@@ -298,34 +298,32 @@ else {
     // Current Energy in Battery
     const currentBatteryEnergyKwh = (currentSoc / 100) * conf.battery_capacity_kwh;
 
-    // Energy required to charge to 100% (including efficiency losses)
-    const currentChargeEnergyKwhNeeded = (conf.battery_capacity_kwh - currentBatteryEnergyKwh) / BATTERY_EFFICIENCY;    
+    // Energy required to charge to Target (95%) (including efficiency losses)
+    // We only want to fill the battery up to 95% to preserve life / leave room for peaks
+    const TARGET_SOC_LIMIT = 0.95;
+    const targetCapacityKwh = conf.battery_capacity_kwh * TARGET_SOC_LIMIT;
+    const currentChargeEnergyKwhNeeded = Math.max(0, (targetCapacityKwh - currentBatteryEnergyKwh) / BATTERY_EFFICIENCY);    
 
     // Projected Energy Outcome (Current + Gain - BaseConsumption)
     const projectedEnergyEndOfDay = currentBatteryEnergyKwh + (solarKwhSum - baseLoadKwhSum);
 
     // Dynamic Reserve Logic (Quadratic "Safe"):
-    // We want to keep the reserve high for most of the time (safety first), 
-    // and only reduce it significantly when the battery is really getting full (>80%).
-    // Curve: Factor = 0.1 + 0.9 * (1 - (SoC_decimal ^ 2))
-    // 
+    // We keep reserve high for safety, reducing it to minimum (10%) when battery is full.
+    // Curve: Factor = 0.1 + 0.9 * (1 - (EffectiveSoC^2))
+    //
     // Examples (Formula scaled to 95% as Full):
     // 0% SoC   -> 1.00 * Reserve (100% Safety)
-    // 30% SoC  -> 0.91 * Reserve (High Safety)
+    // 30% SoC  -> 0.91 * Reserve
     // 50% SoC  -> 0.75 * Reserve
-    // 80% SoC  -> 0.36 * Reserve (Risk allowed)
+    // 80% SoC  -> 0.36 * Reserve
     // 95% SoC  -> 0.10 * Reserve (Minimum Safe-Floor reached)
-    // 100% SoC -> 0.10 * Reserve (Minimum Safe-Floor reached)
+    // 100% SoC -> 0.10 * Reserve (Clamped)
     
-    // We want the curve to reach its end (Factor 0.1) already at 95% SoC.
-    // Reason: Charging speed drops significantly >95%. We consider 95% as "effectively full" for planning.
-    // Mathematical Trick: We scale the input. 95% becomes "Virtual 100%".
-    // 0.95 / 0.95 = 1.0 -> Formula returns 0.1
-    // 1.00 / 0.95 = 1.05 -> clamped to 1.0 -> Formula returns 0.1
-    const socDecimal = Math.max(0, currentSoc / 100);
-    const effectiveSoc = Math.min(1.0, socDecimal / 0.95);
+    // We treat 95% SoC as "Full" (1.0) for this curve to reach minimum reserve earlier.
+    // Reason: Charging speed drops significantly >95%.
+    const effectiveSoc = Math.min(1.0, Math.max(0, currentSoc / 95.0));
     
-    // Formula: 0.1 + (0.9 * (1 - effective_soc^2))
+    // Calculate Factor: 1.0 (empty) -> 0.1 (full)
     const socFactor = 0.1 + (0.9 * (1 - Math.pow(effectiveSoc, 2)));
     const dynamicReserve = conf.reserve_kwh * socFactor;
     
