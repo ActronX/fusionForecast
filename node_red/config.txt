@@ -9,6 +9,7 @@
         "consumer_power_w": 1000.0,
         "base_load_w": 300.0,
         "battery_efficiency": 0.85,
-        "use_damping_factor": true
+        "use_damping_factor": true,
+        "allow_battery_support": true
     }
 }

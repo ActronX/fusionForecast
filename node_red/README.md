@@ -81,6 +81,7 @@ Configuration is passed via `msg.config.consumer`.
 | min_runtime_minutes | Minimum runtime used to calculate "Cycle Cost". | min |
 | battery_efficiency | Efficiency of the battery charging process (e.g. 0.90 for 90%). | - |
 | use_damping_factor | Enable/Disable real-time forecast correction (true/false). | - |
+| allow_battery_support | Enable/Disable draining battery. Default: true. | - |
 
 ---
 

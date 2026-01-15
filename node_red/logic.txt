@@ -47,7 +47,8 @@ try {
         consumer_power_w: requireVal(rawConf.consumer_power_w, "consumer_power_w"),
         base_load_w: requireVal(rawConf.base_load_w, "base_load_w"),
         battery_efficiency: requireVal(rawConf.battery_efficiency, "battery_efficiency"),
-        use_damping_factor: rawConf.use_damping_factor !== undefined ? Boolean(rawConf.use_damping_factor) : false   
+        use_damping_factor: rawConf.use_damping_factor !== undefined ? Boolean(rawConf.use_damping_factor) : false,
+        allow_battery_support: rawConf.allow_battery_support !== undefined ? Boolean(rawConf.allow_battery_support) : true
     };
 } catch (error) {
     node.error(error.message);
@@ -403,8 +404,8 @@ else {
             debugInfo.state = "SURPLUS_ENOUGH";
         }
         // Do we have at least enough for Base Load? (Draining battery for consumer)
-        // This prevents draining a full battery during the night.
-        else if(conf.base_load_w < currentForecastWatts){
+        // Check 2: Do we have at least enough for Base Load? (Draining battery for consumer)
+        else if(conf.allow_battery_support && conf.base_load_w < currentForecastWatts){
             switchState = 0; // ON
             color = "green";
             // If the forecast is higher than the base load, we can switch ON
