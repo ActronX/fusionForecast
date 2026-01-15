@@ -46,7 +46,6 @@ try {
         reserve_kwh: requireVal(rawConf.reserve_kwh, "reserve_kwh"),
         consumer_power_w: requireVal(rawConf.consumer_power_w, "consumer_power_w"),
         base_load_w: requireVal(rawConf.base_load_w, "base_load_w"),
-        forecast_conversion_factor: requireVal(rawConf.forecast_conversion_factor, "forecast_conversion_factor"),
         battery_efficiency: requireVal(rawConf.battery_efficiency, "battery_efficiency"),
         use_damping_factor: rawConf.use_damping_factor !== undefined ? Boolean(rawConf.use_damping_factor) : false   
     };
@@ -128,7 +127,7 @@ if (conf.use_damping_factor) {
             const match = fullForecastList.find(f => Math.abs(new Date(f._time).getTime() - pTime) < 7.5 * 60 * 1000);
             
             if (match) {
-                const fVal = Number(match._value) * conf.forecast_conversion_factor;
+                const fVal = Number(match._value);
                 const pVal = Number(prod._value); // Assumed Watts
                 
                 // Only compare when significant power is expected (> 50% of Base Load)
@@ -208,7 +207,7 @@ if (fullForecastList.length > 0) {
         });
 
     if (forecastList.length > 0) {
-        currentForecastWatts = Number(forecastList[0]._value) * conf.forecast_conversion_factor;
+        currentForecastWatts = Number(forecastList[0]._value);
     }
 }
 
@@ -259,7 +258,7 @@ else {
     // the generated power is sufficient to cover the house's base load.
     for (let point of forecastList) {
         const rawVal = Number(point._value);
-        const generatedWatts = rawVal * conf.forecast_conversion_factor;
+        const generatedWatts = Number(point._value);
         
         if (generatedWatts < conf.base_load_w) {
             cutoffReason = `Night: PV Power < House BaseLoad`;

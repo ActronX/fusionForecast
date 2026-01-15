@@ -79,7 +79,6 @@ Configuration is passed via `msg.config.consumer`.
 | base_load_w | Average house consumption to subtract from solar gain. | W |
 | consumer_power_w | Power consumption of the controlled device. | W |
 | min_runtime_minutes | Minimum runtime used to calculate "Cycle Cost". | min |
-| forecast_conversion_factor | Factor to convert Irradiance to AC Watts. | - |
 | battery_efficiency | Efficiency of the battery charging process (e.g. 0.90 for 90%). | - |
 | use_damping_factor | Enable/Disable real-time forecast correction (true/false). | - |
 
