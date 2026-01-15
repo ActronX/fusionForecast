@@ -385,9 +385,9 @@ else {
         // we might hit min_soc before the cycle finishes.
         //
         // Rule: Only allow switching OFF if:
-        // 1. Current Solar Power is NOT enough to run the device (we are draining battery)
+        // Current Solar Power is NOT enough to run the device (we are draining battery)
         // AND
-        // 2. Battery is below our SAFE_BUFFER_SOC (we don't have a buffer to drain)
+        // Battery is below our SAFE_BUFFER_SOC (we don't have a buffer to drain)
         if (currentForecastWatts < (conf.consumer_power_w + conf.base_load_w) && currentSoc < SAFE_BUFFER_SOC) {
             switchState = 1; // OFF
             color = "yellow";
@@ -399,7 +399,7 @@ else {
             switchState = 0; // ON
             color = "green";
             // If the forecast is higher than the base load + consumer power, we can switch ON
-            reason = `ON. Forecast: ${currentForecastWatts.toFixed(0)}W >= ${(conf.base_load_w + conf.consumer_power_w).toFixed(0)}W`;
+            reason = `ON. Fullpower: ${currentForecastWatts.toFixed(0)}W >= ${(conf.base_load_w + conf.consumer_power_w).toFixed(0)}W`;
             debugInfo.state = "SURPLUS_ENOUGH";
         }
         // Do we have at least enough for Base Load? (Draining battery for consumer)
@@ -408,7 +408,7 @@ else {
             switchState = 0; // ON
             color = "green";
             // If the forecast is higher than the base load, we can switch ON
-            reason = `ON. Draining Battery: ${currentForecastWatts.toFixed(0)}W < ${(conf.base_load_w + conf.consumer_power_w).toFixed(0)}W`;
+            reason = `ON. Battery Support: ${currentForecastWatts.toFixed(0)}W < ${(conf.base_load_w + conf.consumer_power_w).toFixed(0)}W`;
             debugInfo.state = "SURPLUS_DRAINING";
         }
         else{
