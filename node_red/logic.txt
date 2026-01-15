@@ -322,7 +322,8 @@ else {
     // Mathematical Trick: We scale the input. 95% becomes "Virtual 100%".
     // 0.95 / 0.95 = 1.0 -> Formula returns 0.1
     // 1.00 / 0.95 = 1.05 -> clamped to 1.0 -> Formula returns 0.1
-    const effectiveSoc = Math.min(1, socDecimal / 0.95);
+    const socDecimal = Math.max(0, currentSoc / 100);
+    const effectiveSoc = Math.min(1.0, socDecimal / 0.95);
     
     // Formula: 0.1 + (0.9 * (1 - effective_soc^2))
     const socFactor = 0.1 + (0.9 * (1 - Math.pow(effectiveSoc, 2)));
