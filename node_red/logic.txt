@@ -399,7 +399,7 @@ else {
             switchState = 0; // ON
             color = "green";
             // If the forecast is higher than the base load + consumer power, we can switch ON
-            reason = `ON. Fullpower: ${currentForecastWatts.toFixed(0)}W >= ${(conf.base_load_w + conf.consumer_power_w).toFixed(0)}W`;
+            reason = `ON. Full Power: ${currentForecastWatts.toFixed(0)}W >= ${(conf.base_load_w + conf.consumer_power_w).toFixed(0)}W`;
             debugInfo.state = "SURPLUS_ENOUGH";
         }
         // Do we have at least enough for Base Load? (Draining battery for consumer)
