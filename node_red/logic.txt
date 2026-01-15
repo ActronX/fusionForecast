@@ -136,6 +136,16 @@ if (conf.use_damping_factor) {
                 if (fVal > conf.base_load_w / 2.0) { 
                      // Weight recent data more strongly: Exponential decay of "relevance" (Half-Life 1h)
                      // Matches the decay logic used for future forecast adjustment
+                     // Example:
+                     // - T-00 min: Weight 100% (1.00) -> Full Impact
+                     // - T-30 min: Weight ~71% (0.71)
+                     // - T-60 min: Weight  50% (0.50) -> Half Impact
+                     // - T-2h:     Weight  25% (0.25)
+                     //
+                     // Why?
+                     // We want to react fast to changing weather (e.g., fog clearing up).
+                     // Data from 2 hours ago is "historically correct" but "irrelevant" for the current trend.
+                     // By fading out old data, the "Interpretation" follows the "Reality" much closer.
                      const ageHours = Math.max(0, (nowMs - pTime) / (3600 * 1000));
                      const weight = Math.pow(0.5, ageHours / 1.0);
 
