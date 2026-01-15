@@ -134,15 +134,22 @@ if (conf.use_damping_factor) {
                 // Only compare when significant power is expected (> 50% of Base Load)
                 // This implicitly filters for "since sunrise"
                 if (fVal > conf.base_load_w / 2.0) { 
-                     sumForecastPast += fVal;
-                     sumProductionPast += pVal;
+                     // Weight recent data more strongly: Exponential decay of "relevance" (Half-Life 1h)
+                     // Matches the decay logic used for future forecast adjustment
+                     const ageHours = Math.max(0, (nowMs - pTime) / (3600 * 1000));
+                     const weight = Math.pow(0.5, ageHours / 1.0);
+
+                     sumForecastPast += fVal * weight;
+                     sumProductionPast += pVal * weight;
                      matchCount++;
                 }
             }
         }
 
-        // Only apply if we have enough accumulated sun-hours data. 8 samples needed for 2 h. 
-        if (sumForecastPast >  conf.base_load_w  / 2.0 * 8.0) { 
+        // Only apply if we have enough accumulated sun-hours data.
+        // Adjusted for Weighting: Since we dampen older values, the sum is smaller.
+        // Threshold approx 3.0 units of "Full Weight Base Load" (approx 4-6 real samples).
+        if (sumForecastPast >  conf.base_load_w  / 2.0 * 3.0) { 
             dampingFactor = sumProductionPast / sumForecastPast;
             // Safety Clamping (0.75x to 1.5x) to prevent extreme scaling
             dampingFactor = Math.max(0.75, Math.min(dampingFactor, 1.5));
