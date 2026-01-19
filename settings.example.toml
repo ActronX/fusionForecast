@@ -146,3 +146,16 @@ forecast_days = 14
 models = "best_match"
 # 15-minute variable to fetch
 minutely_15 = "global_tilted_irradiance_instant"
+
+
+[nowcast]
+# Bucket containing live production data
+bucket_live = "energy_meter"
+# Measurement name for live production data (PV)
+measurement_live = "energy_meter"
+# Field name for live production power
+field_live = "production"
+# Enable damping factor calculation based on recent performance
+use_damping_factor = true
+# Measurement name for the nowcast output
+m_nowcast = "nowcast"

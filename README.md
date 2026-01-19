@@ -113,7 +113,34 @@ The forecast script loads the saved model and future regressor data (e.g., weath
 - Windows: `forecast.bat` or `python -m src.forecast`
 - Linux: `./forecast.sh` or `python3 -m src.forecast`
 
-### 6. Run Pipeline (Full Automation)
+### 6. Nowcast (Real-Time Correction)
+
+The standard forecast (Step 5) is based on global weather models, which are updated every few hours. However, local weather can deviate rapidly (e.g., unexpected fog, clouds, or clearing).
+
+The **Nowcast** script runs frequently (e.g., every 15 minutes) to correct the forecast for the immediate future.
+
+**How it works (Damping Factor):**
+
+1.  **Weighted History:** It compares **Actual Production** vs. **Forecast** for the last 3 hours using a time-based decay.
+    *   **Why?** To react faster to changing weather (e.g., fog clearing). Data from 2 hours ago is faded out to prioritize the current trend.
+2.  **Damping Factor:** It calculates a performance ratio (e.g., if Production is only 50% of Forecast, Factor = 0.5).
+3.  **Apply (Decaying Influence):** The factor is applied to the next 24 hours of the forecast with a **time-based decay** (Half-Life: 1 hour).
+    *   **Why?** Weather anomalies (like a passing cloud or morning fog) are often temporary.
+    *   **Concept:**
+        *   **Short-Term (0-1h):** We trust our *local* 'Live-Correction' fully. (If it's foggy *now*, it will likely be foggy in 30 mins).
+        *   **Long-Term (2h+):** We trust the *global* 'Weather Forecast' again. (An individual cloud now doesn't mean the whole day is ruined).
+
+**Effect:**
+*   **Now (0h):** 100% Correction.
+*   **+1h:** 50% Correction.
+*   **+2h:** 25% Correction.
+*   **+4h:** ~6% Correction (Back to original Forecast).
+
+**Start:**
+- Windows: `nowcast.bat` or `python -m src.nowcast`
+- Linux: `./nowcast.sh` or `python3 -m src.nowcast`
+
+### 7. Run Pipeline (Full Automation)
 
 Executes the complete workflow in order:
 1. **Connection Test**: Checks InfluxDB health.
@@ -126,7 +153,7 @@ Executes the complete workflow in order:
 - Windows: `run_pipeline.bat`
 - Linux: `./run_pipeline.sh`
 
-### 7. Hyperparameter Tuning
+### 8. Hyperparameter Tuning
 
 To optimize the model's accuracy, you can tune the hyperparameters (e.g., `changepoint_prior_scale`, `seasonality_mode`) using a grid search. The parameters to be tested are defined in `settings.toml` under `[prophet.tuning]`.
 
@@ -166,6 +193,7 @@ Here is a detailed description of the Python scripts located in `src/`:
 ### Core Pipeline
 - **`src/train.py`**: Trains the **Production** (PV) model. Fetches historical production and regressor data, trains Prophet, and saves `prophet_model.pkl`.
 - **`src/forecast.py`**: Generates **Production** forecasts. Loads the model, fetches future weather data, predicts generation, and writes to InfluxDB.
+- **`src/nowcast.py`**: **Real-Time Correction**. Adjusts the forecast based on the last 3 hours of actual production to react to immediate weather changes (e.g., fog).
 
 ### Data Fetching
 - **`src/fetch_future_weather.py`**: Fetches **current** weather forecasts from Open-Meteo (DWD ICON-D2) for the next few days and stores them in InfluxDB (used for forecasting).
@@ -225,6 +253,9 @@ Add the following lines (adjust `/path/to/fusionForecast` to your installation p
 
 # Create a forecast every 15 minutes (e.g. at minute 2, 17, 32, 47)
 2,17,32,47 * * * * /path/to/fusionForecast/forecast.sh >> /path/to/fusionForecast/logs/forecast.log 2>&1
+
+# Run Nowcast every 15 minutes (e.g., shortly after forecast, at minute 4, 19, 34, 49)
+4,19,34,49 * * * * /path/to/fusionForecast/nowcast.sh >> /path/to/fusionForecast/logs/nowcast.log 2>&1
 
 # Fetch historic weather data once a month (e.g., 1st of the month at 01:00 AM)
 0 1 1 * * /path/to/fusionForecast/fetch_historic_weather.sh >> /path/to/fusionForecast/logs/fetch_historic.log 2>&1
