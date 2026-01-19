@@ -51,6 +51,9 @@ def run_nowcast():
     measurement_live = settings.get('nowcast', {}).get('measurement_live', 'production')
     field_live = settings.get('nowcast', {}).get('field_live', 'production')
     
+    min_damping = settings.get('nowcast', {}).get('min_damping_factor', 0.75)
+    max_damping = settings.get('nowcast', {}).get('max_damping_factor', 1.5)
+    
     query_prod = f'''
     from(bucket: "{bucket_live}")
       |> range(start: {int(start_time_history.timestamp())})
@@ -170,22 +173,25 @@ def run_nowcast():
         
         # Only apply if we have enough accumulated sun-hours data (weighted sum).
         # Threshold: 4 * night_threshold allows for robust base of data before modifying forecast.
-        if sum_forecast_weighted > (4 * night_threshold): 
+        if sum_forecast_weighted > (6 * night_threshold): 
             damping_factor = sum_production_weighted / sum_forecast_weighted
             
-            # Safety Clamping (0.75x to 1.5x) to prevent extreme scaling 
+            # Safety Clamping (configurable) to prevent extreme scaling 
             # based on short-term anomalies.
-            damping_factor = max(0.75, min(damping_factor, 1.5))
+            damping_factor = max(min_damping, min(damping_factor, max_damping))
         
         print(f"Analysis: Matches:{count} | Prod:{sum_production_weighted:.0f} vs Fcst:{sum_forecast_weighted:.0f}")    
         print(f"Damping Factor: {damping_factor:.4f}")
 
     # 4. Apply to Future Forecast
     # Use Flux date functions and pivot to match forecast.py style
+    # get forecast_days from settings, default to 14 if not found
+    load_forecast_days = settings.get('forecast_parameters', {}).get('forecast_days', 14)
+
     query_future = f'''
     import "date"
     from(bucket: "{settings['buckets']['b_target_forecast']}")
-      |> range(start: now(), stop: date.add(d: 24h, to: now()))
+      |> range(start: now(), stop: date.add(d: {load_forecast_days}d, to: now()))
       |> filter(fn: (r) => r["_measurement"] == "{settings['measurements']['m_forecast']}")
       |> filter(fn: (r) => r["_field"] == "{settings['fields']['f_forecast']}")
       |> pivot(rowKey:["_time"], columnKey: ["_field"], valueColumn: "_value")
