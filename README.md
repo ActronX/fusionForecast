@@ -150,6 +150,7 @@ Executes the complete workflow in order:
 3. **Fetch Future Weather**: Updates forecast data.
 4. **Train Model**: Retrains the model.
 5. **Create Forecast**: Generates the forecast.
+6. **Nowcast**: Real-Time Correction.
 
 **Start:**
 - Windows: `run_pipeline.bat`

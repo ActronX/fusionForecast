@@ -52,6 +52,15 @@ def main():
     except Exception as e:
         print(f"Error during forecasting: {e}")
         sys.exit(1)
+
+    print("\n--- Step 6: Nowcast (Real-Time Correction) ---")
+    try:
+        from src.nowcast import run_nowcast
+        run_nowcast()
+    except Exception as e:
+        print(f"Error during nowcast: {e}")
+        # Nowcast failure is not critical for the pipeline
+        
         
     print("\n=== Pipeline Complete ===")
 
