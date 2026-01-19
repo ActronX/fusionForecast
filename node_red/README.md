@@ -15,6 +15,19 @@ It includes advanced protection features:
 
 ---
 
+## Installation (Import)
+
+A complete **ready-to-use Flow** is available in this repository.
+
+1.  Open the file [`flow.json`](flow.json).
+2.  Copy the entire JSON content.
+3.  In your Node-RED Dashboard: Go to **Menu** -> **Import**.
+4.  Paste the content and click **Import**.
+
+This will create the full logic chain as described below.
+
+---
+
 ## Wiring / Node Connections
 
 To make this logic work, connect your Node-RED nodes in the following linear sequence:
