@@ -159,3 +159,7 @@ field_live = "production"
 use_damping_factor = true
 # Measurement name for the nowcast output
 m_nowcast = "nowcast"
+# Lower limit for damping factor (prevent extreme downscaling)
+min_damping_factor = 0.75
+# Upper limit for damping factor (prevent extreme upscaling)
+max_damping_factor = 1.5
