@@ -115,7 +115,7 @@ The forecast script loads the saved model and future regressor data (e.g., weath
 
 ### 6. Nowcast (Real-Time Correction)
 
-The standard forecast (Step 5) is based on global weather models, which are updated every few hours. However, local weather can deviate rapidly (e.g., unexpected fog, clouds, or clearing).
+The standard forecast (Step 5) is based on weather models (like ICON-D2), which have a **spatial resolution of several kilometers** (e.g., ~2 km to 10 km). Therefore, they cannot perfectly predict small-scale local events (e.g., a single cloud field or fog patches directly over your roof).
 
 The **Nowcast** script runs frequently (e.g., every 15 minutes) to correct the forecast for the immediate future.
 
