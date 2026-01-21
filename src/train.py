@@ -57,11 +57,28 @@ def train_model():
     print(f"Fetching regressor data from {settings['buckets']['b_regressor_history']}...")
     regressor_offset = settings['preprocessing'].get('regressor_offset', '0m')
     regressor_scale = settings['preprocessing'].get('regressor_scale', 1.0)
+    
+    # Check if we should use Perez POA / Effective
+    use_pvlib = settings.get('prophet', {}).get('use_pvlib', False)
+    
+    if use_pvlib:
+        regressor_fields = [
+            settings['fields'].get('f_effective_irradiance', 'effective_irradiance'),
+            settings['fields'].get('f_temp_cell', 'temperature_cell')
+        ]
+    else:
+        regressor_fields = [settings['fields']['f_regressor_history']]
+    
+    print(f"Using regressor fields: {regressor_fields}")
+    
+    # Filter for all requested regressor fields
+    regressor_filter = " or ".join([f'r["_field"] == "{f}"' for f in regressor_fields])
+    
     query_regressor = f'''
     from(bucket: "{settings['buckets']['b_regressor_history']}")
       |> range(start: {range_start})
       |> filter(fn: (r) => r["_measurement"] == "{settings['measurements']['m_regressor_history']}")
-      |> filter(fn: (r) => r["_field"] == "{settings['fields']['f_regressor_history']}")
+      |> filter(fn: (r) => {regressor_filter})
       |> map(fn: (r) => ({{ r with _value: r._value * {regressor_scale} }}))
       |> timeShift(duration: {regressor_offset})
       |> pivot(rowKey:["_time"], columnKey: ["_field"], valueColumn: "_value")
@@ -75,18 +92,19 @@ def train_model():
         print(f"  > Field: {settings['fields']['f_regressor_history']}")
     else:
         # Preprocess Regressor
-        # Rename value column to match regressor name
-        regressor_name = settings['measurements']['m_regressor_history'] # 'solarcast'
-        df_regressor.rename(columns={settings['fields']['f_regressor_history']: regressor_name}, inplace=True)
-        
         # Standardize regressor data using helper
         df_regressor = prepare_prophet_dataframe(df_regressor, freq='30min')
         
-        # Interpolate missing values (e.g. if upsampling from 1h to 30min)
-        df_regressor[regressor_name] = df_regressor[regressor_name].interpolate(method='linear', limit_direction='both')
+        # Interpolate and rename each regressor field
+        regressor_names = []
+        for field in regressor_fields:
+            # We name the regressor for Prophet based on the field name
+            reg_name = field 
+            df_regressor[reg_name] = df_regressor[reg_name].interpolate(method='linear', limit_direction='both')
+            regressor_names.append(reg_name)
         
         # Merge on 'ds'
-        df_prophet = pd.merge(df_prophet, df_regressor[['ds', regressor_name]], on='ds', how='inner')
+        df_prophet = pd.merge(df_prophet, df_regressor[['ds'] + regressor_names], on='ds', how='inner')
         
         # Drop rows with NaNs (Prophet doesn't like NaNs in regressors)
         df_prophet.dropna(inplace=True)
@@ -123,9 +141,11 @@ def train_model():
         seasonality_mode = seasonality_mode
     )
     
-    # Add Regressor
+    # Add Regressors
     prior_scale = settings['prophet']['regressor_prior_scale']
-    model.add_regressor(regressor_name, mode=regressor_mode, prior_scale=prior_scale)
+    for reg_name in regressor_names:
+        print(f"Adding regressor: {reg_name}")
+        model.add_regressor(reg_name, mode=regressor_mode, prior_scale=prior_scale)
     
     print("Fitting model...")
     model.fit(df_prophet)

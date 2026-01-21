@@ -251,6 +251,7 @@ def run_nowcast():
         # Blend the calculated dampingFactor with standard 1.0 based on decay.
         effective_factor = 1.0 + ((damping_factor - 1.0) * decay_weight)
         
+        # Clamp to physical maximum (max_power_clip from settings)
         adjusted_val = min(fcst * effective_factor, pv_peak)
         adjusted_values.append(adjusted_val)
         

@@ -46,6 +46,19 @@ f_regressor_future = "irradiance"
 # Field name for the output production forecast value
 f_forecast = "power_produced_forecast"
 
+# Field name for diffuse radiation
+f_diffuse = "diffuse_radiation"
+# Field name for direct normal irradiance
+f_direct = "direct_normal_irradiance"
+# Field name for Perez POA calculated irradiance
+f_poa_perez = "global_tilted_perez"
+# Field name for the Effective Irradiance (after IAM losses)
+f_effective_irradiance = "effective_irradiance"
+# Field names for temperature and wind speed
+f_temp_amb = "temperature_2m"
+f_wind_speed = "wind_speed_10m"
+f_temp_cell = "temperature_cell"
+
 
 [model]
 # Path to store the serialized Prophet model for production
@@ -76,6 +89,8 @@ forecast_offset = "0m"
 
 [prophet]
 # --- Production Model Settings ---
+# If true, use 'f_effective_irradiance' and 'f_temp_cell' fields as regressors via pvlib calculations
+use_pvlib = true
 # influence of the external regressor on the model (Higher = stronger influence)
 regressor_prior_scale = 5.0 
 # Flexibility of the trend component (Higher = more flexible, Lower = smoother)
@@ -89,6 +104,15 @@ seasonality_mode = "additive"
 regressor_mode = "additive"
 # Enable yearly seasonality (only if >1 year of data available)
 yearly_seasonality = true
+
+[pvlib.parameters]
+# --- PVlib Model Parameters ---
+# ASHRAE IAM model parameter (b)
+iam_b = 0.05
+# SAPM cell temperature model parameters (a, b, deltaT)
+sapm_a = -2.98
+sapm_b = -0.0471
+sapm_deltaT = 1
 
 
 [prophet.tuning]

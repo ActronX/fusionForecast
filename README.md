@@ -10,6 +10,7 @@ FusionForecast is an ML-based tool for forecasting time series data (e.g., PV ge
 - **Modeling**: Uses Facebook Prophet for time series forecasting.
 - **Server-Side Aggregation**: Performs downsampling (e.g., to 1h means) directly in the database.
 - **Configurable**: All settings (buckets, measurements, offsets) are defined in `settings.toml`.
+- **Advanced Irradiance Modeling (Optional)**: Support for Perez POA, IAM losses, and SAPM cell temperature modeling via `pvlib`.
 - **Offset Support**: Supports time offsets for regressors (e.g., to adjust time zones or lead times).
 
 ## Prerequisites
@@ -62,6 +63,19 @@ Configuration is managed via the `settings.toml` file.
 - **[prophet]**:
     - `regressor_prior_scale`: Prior scale for the regressor (controls flexibility).
     - `seasonality_mode` / `regressor_mode`: Additive or Multiplicative.
+    - `use_pvlib`: If `true`, enables advanced physical modeling (Perez POA, IAM reflection losses, and SAPM cell temperature).
+        - **Note**: Physical modeling aims to describe the system more accurately to provide a slight performance edge. However, Prophet is also capable of "learning" these physical relationships implicitly from plain Shortwave Solar Radiation (GHI) or seasonaly patterns during training. just try it out and compare the results.
+
+- **[pvlib.parameters]**:
+    - Parameters for the physical model (e.g., `iam_b` for reflection losses, and `sapm_a`, `sapm_b`, `sapm_deltaT` for the temperature model).
+    - **Common SAPM Parameter Sets** (Reference: [pvlib temperature model](https://pvlib-python.readthedocs.io/en/stable/user_guide/temperature_models.html#sandia-array-performance-model-sapm)):
+
+    | Mounting / Material | `sapm_a` | `sapm_b` | `sapm_deltaT` |
+    | :--- | :--- | :--- | :--- |
+    | Open Rack, Glass/Glass | -3.47 | -0.0594 | 3 |
+    | Close Mount, Glass/Glass | -2.98 | -0.0471 | 1 |
+    | Open Rack, Glass/Poly | -3.56 | -0.0750 | 3 |
+    | Insulated Back, Glass/Poly | -2.81 | -0.0455 | 0 |
 
 - **[open_meteo]** / **[open_meteo.historic]** / **[open_meteo.forecast]**:
     - Settings for fetching weather data (location, API URLs, models).
@@ -198,9 +212,10 @@ Here is a detailed description of the Python scripts located in `src/`:
 - **`src/forecast.py`**: Generates **Production** forecasts. Loads the model, fetches future weather data, predicts generation, and writes to InfluxDB.
 - **`src/nowcast.py`**: **Real-Time Correction**. Adjusts the forecast based on the last 3 hours of actual production to react to immediate weather changes (e.g., fog).
 
-### Data Fetching
-- **`src/fetch_future_weather.py`**: Fetches **current** weather forecasts from Open-Meteo (DWD ICON-D2) for the next few days and stores them in InfluxDB (used for forecasting).
-- **`src/fetch_historic_weather.py`**: Fetches **historical** weather data from Open-Meteo for the past (used for training the regressor).
+### Data Fetching & Calculations
+- **`src/fetch_future_weather.py`**: Fetches **current** weather forecasts from Open-Meteo. If `use_pvlib` is enabled, it automatically triggers the consolidated calculation.
+- **`src/fetch_historic_weather.py`**: Fetches **historical** weather data. If `use_pvlib` is enabled, it automatically triggers the consolidated calculation.
+- **`src/calc_effective_irradiance.py`**: **Consolidated Physics Model**. Calculates Plane of Array (POA) irradiance, applies Incidence Angle Modifier (IAM) losses, and computes the SAPM cell temperature.
 
 ### Utilities & Maintenance
 

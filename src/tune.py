@@ -49,11 +49,26 @@ def fetch_and_prepare_data():
     # 2. Regressor
     regressor_offset = settings['preprocessing'].get('regressor_offset', '0m')
     regressor_scale = settings['preprocessing'].get('regressor_scale', 1.0)
+    
+    # Check if we should use Perez POA / Effective
+    use_pvlib = settings.get('prophet', {}).get('use_pvlib', False)
+    
+    if use_pvlib:
+        regressor_fields = [
+            settings['fields'].get('f_effective_irradiance', 'effective_irradiance'),
+            settings['fields'].get('f_temp_cell', 'temperature_cell')
+        ]
+    else:
+        regressor_fields = [settings['fields']['f_regressor_history']]
+    
+    # Filter for all requested regressor fields
+    regressor_filter = " or ".join([f'r["_field"] == "{f}"' for f in regressor_fields])
+    
     query_regressor = f'''
     from(bucket: "{settings['buckets']['b_regressor_history']}")
       |> range(start: {range_start})
       |> filter(fn: (r) => r["_measurement"] == "{settings['measurements']['m_regressor_history']}")
-      |> filter(fn: (r) => r["_field"] == "{settings['fields']['f_regressor_history']}")
+      |> filter(fn: (r) => {regressor_filter})
       |> map(fn: (r) => ({{ r with _value: r._value * {regressor_scale} }}))
       |> timeShift(duration: {regressor_offset})
       |> pivot(rowKey:["_time"], columnKey: ["_field"], valueColumn: "_value")
@@ -61,18 +76,21 @@ def fetch_and_prepare_data():
     df_regressor = db.query_dataframe(query_regressor)
     if df_regressor.empty: return None
 
-    regressor_name = settings['measurements']['m_regressor_history']
-    df_regressor.rename(columns={settings['fields']['f_regressor_history']: regressor_name}, inplace=True)
     df_regressor = prepare_prophet_dataframe(df_regressor, freq='30min')
-    df_regressor[regressor_name] = df_regressor[regressor_name].interpolate(method='linear', limit_direction='both')
+    
+    regressor_names = []
+    for field in regressor_fields:
+        reg_name = field
+        df_regressor[reg_name] = df_regressor[reg_name].interpolate(method='linear', limit_direction='both')
+        regressor_names.append(reg_name)
 
     # Merge
-    df_prophet = pd.merge(df_prophet, df_regressor[['ds', regressor_name]], on='ds', how='inner')
+    df_prophet = pd.merge(df_prophet, df_regressor[['ds'] + regressor_names], on='ds', how='inner')
     df_prophet.dropna(inplace=True)
     
-    return df_prophet, regressor_name
+    return df_prophet, regressor_names
 
-def evaluate_combination(params, df, regressor_name, initial, period, horizon):
+def evaluate_combination(params, df, regressor_names, initial, period, horizon):
     """
     Evaluates a single combination of hyperparameters.
     Must be a top-level function for pickling in multiprocessing.
@@ -86,7 +104,8 @@ def evaluate_combination(params, df, regressor_name, initial, period, horizon):
             seasonality_prior_scale=params['seasonality_prior_scale'],
             seasonality_mode = params.get('seasonality_mode', 'multiplicative')
         )
-        m.add_regressor(regressor_name, mode=params.get('regressor_mode', 'multiplicative'), prior_scale=params['regressor_prior_scale'])
+        for reg_name in regressor_names:
+            m.add_regressor(reg_name, mode=params.get('regressor_mode', 'multiplicative'), prior_scale=params['regressor_prior_scale'])
         
         m.fit(df)
         
@@ -127,7 +146,7 @@ def evaluate_combination(params, df, regressor_name, initial, period, horizon):
         return result
 
 def tune_hyperparameters():
-    df, regressor_name = fetch_and_prepare_data()
+    df, regressor_names = fetch_and_prepare_data()
     if df is None or df.empty:
         print("Data fetching failed.")
         return
@@ -175,7 +194,7 @@ def tune_hyperparameters():
                 evaluate_combination, 
                 params, 
                 df, 
-                regressor_name, 
+                regressor_names, 
                 initial, 
                 period, 
                 horizon

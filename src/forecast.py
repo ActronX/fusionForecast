@@ -34,12 +34,29 @@ def run_forecast():
     print(f"Fetching regressor data for next {forecast_days} days...")
     regressor_offset = settings['preprocessing'].get('regressor_offset', '0m')
     regressor_scale = settings['preprocessing'].get('regressor_scale', 1.0)
+    
+    # Check if we should use Perez POA / Effective
+    use_pvlib = settings.get('prophet', {}).get('use_pvlib', False)
+    
+    if use_pvlib:
+        regressor_fields = [
+            settings['fields'].get('f_effective_irradiance', 'effective_irradiance'),
+            settings['fields'].get('f_temp_cell', 'temperature_cell')
+        ]
+    else:
+        regressor_fields = [settings['fields']['f_regressor_future']]
+    
+    print(f"Using regressor fields: {regressor_fields}")
+    
+    # Filter for all requested regressor fields
+    regressor_filter = " or ".join([f'r["_field"] == "{f}"' for f in regressor_fields])
+    
     query_regressor = f'''
     import "date"
     from(bucket: "{settings['buckets']['b_regressor_future']}")
       |> range(start: now(), stop: date.add(d: {forecast_days}d, to: now()))
       |> filter(fn: (r) => r["_measurement"] == "{settings['measurements']['m_regressor_future']}")
-      |> filter(fn: (r) => r["_field"] == "{settings['fields']['f_regressor_future']}")
+      |> filter(fn: (r) => {regressor_filter})
       |> map(fn: (r) => ({{ r with _value: r._value * {regressor_scale} }}))
       |> timeShift(duration: {regressor_offset})
       |> pivot(rowKey:["_time"], columnKey: ["_field"], valueColumn: "_value")
@@ -50,20 +67,20 @@ def run_forecast():
         print("Error: No future regressor data found. Cannot forecast without 'solarcast'.")
         print(f"  > Bucket: {settings['buckets']['b_regressor_future']}")
         print(f"  > Measurement: {settings['measurements']['m_regressor_future']}")
-        print(f"  > Field: {settings['fields']['f_regressor_future']}")
+        print(f"  > Field: {regressor_field}")
         print("  > Possible causes: incorrect names locally or missing future data in DB.")
         return
 
     # Preprocess Regressor
-    # Rename value column to match regressor name used in training
-    regressor_name = settings['measurements']['m_regressor_history'] 
-    df_regressor.rename(columns={settings['fields']['f_regressor_future']: regressor_name}, inplace=True)
-    
     # Standardize regressor using helper (consistent 15min freq)
     df_regressor = prepare_prophet_dataframe(df_regressor, freq='15min')
     
-    # Interpolate missing values (e.g. if upsampling from 1h to 30min)
-    df_regressor[regressor_name] = df_regressor[regressor_name].interpolate(method='linear', limit_direction='both')
+    # Interpolate and rename each regressor field
+    regressor_names = []
+    for field in regressor_fields:
+        reg_name = field
+        df_regressor[reg_name] = df_regressor[reg_name].interpolate(method='linear', limit_direction='both')
+        regressor_names.append(reg_name)
     
     # Check data sufficiency (User requested 50% threshold)
     duration = df_regressor['ds'].max() - df_regressor['ds'].min()
@@ -78,9 +95,7 @@ def run_forecast():
          return
 
     # Create Future DataFrame
-    # Ideally we use the regressor's index as the future dataframe index
-    # Prophet's make_future_dataframe is good but we already have the timestamps from the regressor
-    future = df_regressor[['ds', regressor_name]].copy()
+    future = df_regressor[['ds'] + regressor_names].copy()
     
     # Check if we have enough data
     if future.empty:

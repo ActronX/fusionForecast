@@ -10,6 +10,7 @@ from src.config import settings
 from src.db import InfluxDBWrapper
 from influxdb_client import Point
 from influxdb_client.client.write_api import SYNCHRONOUS
+from src.calc_effective_irradiance import calculate_effective_irradiance
 
 def fetch_forecast_data():
     """Fetches forecast data from Open-Meteo API based on settings."""
@@ -32,7 +33,13 @@ def fetch_forecast_data():
     params = {
         "latitude": om_settings['latitude'],
         "longitude": om_settings['longitude'],
-        "minutely_15": om_forecast.get('minutely_15', "global_tilted_irradiance_instant"),
+        "minutely_15": [
+            om_forecast.get('minutely_15', "global_tilted_irradiance_instant"), 
+            "diffuse_radiation", 
+            "direct_normal_irradiance",
+            "temperature_2m",
+            "wind_speed_10m"
+        ],
         "models": om_forecast.get('models', 'best_match'),
         "tilt": om_settings['tilt'],
         "azimuth": om_settings['azimuth'],
@@ -50,8 +57,12 @@ def fetch_forecast_data():
     minutely_15 = response.Minutely15()
     
     # Verify variable exists
-    # Assuming single variable requested for minutely_15
+    # Assuming valid response with requested variables
     minutely_15_values = minutely_15.Variables(0).ValuesAsNumpy()
+    diffuse_radiation_values = minutely_15.Variables(1).ValuesAsNumpy()
+    direct_normal_irradiance_values = minutely_15.Variables(2).ValuesAsNumpy()
+    temperature_2m_values = minutely_15.Variables(3).ValuesAsNumpy()
+    wind_speed_10m_values = minutely_15.Variables(4).ValuesAsNumpy()
 
     minutely_15_data = {
         "date": pd.date_range(
@@ -60,7 +71,11 @@ def fetch_forecast_data():
             freq=pd.Timedelta(seconds=minutely_15.Interval()),
             inclusive="left"
         ),
-        "global_tilted_irradiance": minutely_15_values 
+        "global_tilted_irradiance": minutely_15_values,
+        "diffuse_radiation": diffuse_radiation_values,
+        "direct_normal_irradiance": direct_normal_irradiance_values,
+        "temperature_2m": temperature_2m_values,
+        "wind_speed_10m": wind_speed_10m_values
         # Note: We map minutely_15 values to 'global_tilted_irradiance' 
         # to match the field name expected by the rest of the pipeline.
     }
@@ -83,19 +98,27 @@ def write_to_influx(df):
 
     bucket = settings['buckets']['b_regressor_future']
     measurement = settings['measurements']['m_regressor_future']
-    field = settings['fields']['f_regressor_future']
+    field_irradiance = settings['fields']['f_regressor_future']
+    field_diffuse = settings['fields'].get('f_diffuse', 'diffuse_radiation')
+    field_direct = settings['fields'].get('f_direct', 'direct_normal_irradiance')
+    field_temp_amb = settings['fields'].get('f_temp_amb', 'temperature_2m')
+    field_wind_speed = settings['fields'].get('f_wind_speed', 'wind_speed_10m')
     
     db_wrapper = InfluxDBWrapper()
     write_api = db_wrapper.client.write_api(write_options=SYNCHRONOUS)
     
     points = []
     print(f"Target Measurement: '{measurement}'")
-    print(f"Target Field: '{field}'")
+    print(f"Target Fields: '{field_irradiance}', '{field_diffuse}', '{field_direct}', '{field_temp_amb}', '{field_wind_speed}'")
     print(f"Preparing points for InfluxDB bucket '{bucket}'...")
     
     for _, row in df.iterrows():
         point = Point(measurement)\
-            .field(field, float(row["global_tilted_irradiance"]))\
+            .field(field_irradiance, float(row["global_tilted_irradiance"]))\
+            .field(field_diffuse, float(row["diffuse_radiation"]))\
+            .field(field_direct, float(row["direct_normal_irradiance"]))\
+            .field(field_temp_amb, float(row["temperature_2m"]))\
+            .field(field_wind_speed, float(row["wind_speed_10m"]))\
             .time(row["date"])
         points.append(point)
 
@@ -116,6 +139,11 @@ def main():
         df = fetch_forecast_data()
         if not df.empty:
             write_to_influx(df)
+            
+            # Check if we should calculate Perez POA / Effective Irradiance
+            if settings.get('prophet', {}).get('use_pvlib', False):
+                print("Perez/Effective GHI calculation is enabled. Running calculation...")
+                calculate_effective_irradiance(is_future=True)
         else:
             print("No data fetched.")
     except Exception as e:
