@@ -68,14 +68,6 @@ Configuration is managed via the `settings.toml` file.
 
 - **[pvlib.parameters]**:
     - Parameters for the physical model (e.g., `iam_b` for reflection losses, and `sapm_a`, `sapm_b`, `sapm_deltaT` for the temperature model).
-    - **Common SAPM Parameter Sets** (Reference: [pvlib temperature model](https://pvlib-python.readthedocs.io/en/stable/user_guide/temperature_models.html#sandia-array-performance-model-sapm)):
-
-    | Mounting / Material | `sapm_a` | `sapm_b` | `sapm_deltaT` |
-    | :--- | :--- | :--- | :--- |
-    | Open Rack, Glass/Glass | -3.47 | -0.0594 | 3 |
-    | Close Mount, Glass/Glass | -2.98 | -0.0471 | 1 |
-    | Open Rack, Glass/Poly | -3.56 | -0.0750 | 3 |
-    | Insulated Back, Glass/Poly | -2.81 | -0.0455 | 0 |
 
 - **[open_meteo]** / **[open_meteo.historic]** / **[open_meteo.forecast]**:
     - Settings for fetching weather data (location, API URLs, models).
