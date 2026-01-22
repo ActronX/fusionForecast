@@ -39,7 +39,7 @@ def preprocess_data(df, value_column='_value', is_prophet_input=True):
     df.dropna(subset=[value_column], inplace=True)
     
     # Clip values
-    max_clip = settings['preprocessing']['max_power_clip']
+    max_clip = settings['model']['preprocessing']['max_power_clip']
     df[value_column] = df[value_column].clip(lower=0, upper=max_clip)
     
     if is_prophet_input:
@@ -117,7 +117,7 @@ def postprocess_forecast(forecast_df):
     """
     # Prophet returns 'yhat'
     if 'yhat' in forecast_df.columns:
-        max_clip = settings['preprocessing']['max_power_clip']
+        max_clip = settings['model']['preprocessing']['max_power_clip']
         forecast_df['yhat'] = forecast_df['yhat'].clip(lower=0, upper=max_clip)
     
     return forecast_df

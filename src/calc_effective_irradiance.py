@@ -27,25 +27,25 @@ def calculate_effective_irradiance(is_future=False):
     write_api = db.client.write_api(write_options=SYNCHRONOUS)
 
     if is_future:
-        bucket = settings['buckets']['b_regressor_future']
-        measurement = settings['measurements']['m_regressor_future']
+        bucket = settings['influxdb']['buckets']['regressor_future']
+        measurement = settings['influxdb']['measurements']['regressor_future']
         # Determine Time Range for Future
         now_utc = datetime.datetime.now(datetime.timezone.utc)
         start_time = now_utc - datetime.timedelta(hours=1)
-        end_time = now_utc + datetime.timedelta(days=settings['forecast_parameters']['forecast_days'] + 1)
+        end_time = now_utc + datetime.timedelta(days=settings['model']['forecast_days'] + 1)
         range_str = f"start: {start_time.isoformat()}, stop: {end_time.isoformat()}"
     else:
-        bucket = settings['buckets']['b_regressor_history']
-        measurement = settings['measurements']['m_regressor_history']
-        range_str = f"start: -{settings['forecast_parameters']['training_days']}d"
+        bucket = settings['influxdb']['buckets']['regressor_history']
+        measurement = settings['influxdb']['measurements']['regressor_history']
+        range_str = f"start: -{settings['model']['training_days']}d"
 
-    field_diffuse = settings['fields'].get('f_diffuse', 'diffuse_radiation')
-    field_direct = settings['fields'].get('f_direct', 'direct_normal_irradiance')
-    field_temp_amb = settings['fields'].get('f_temp_amb', 'temperature_2m')
-    field_wind_speed = settings['fields'].get('f_wind_speed', 'wind_speed_10m')
-    field_poa = settings['fields'].get('f_poa_perez', 'global_tilted_perez')
-    field_effective = settings['fields'].get('f_effective_irradiance', 'effective_irradiance')
-    field_temp_cell = settings['fields'].get('f_temp_cell', 'temperature_cell')
+    field_diffuse = settings['influxdb']['fields'].get('diffuse', 'diffuse_radiation')
+    field_direct = settings['influxdb']['fields'].get('direct', 'direct_normal_irradiance')
+    field_temp_amb = settings['influxdb']['fields'].get('temp_amb', 'temperature_2m')
+    field_wind_speed = settings['influxdb']['fields'].get('wind_speed', 'wind_speed_10m')
+    field_poa = settings['influxdb']['fields'].get('poa_perez', 'global_tilted_perez')
+    field_effective = settings['influxdb']['fields'].get('effective_irradiance', 'effective_irradiance')
+    field_temp_cell = settings['influxdb']['fields'].get('temp_cell', 'temperature_cell')
 
     # 2. Fetch Data
     print(f"Fetching data from '{bucket}'...")
@@ -69,12 +69,12 @@ def calculate_effective_irradiance(is_future=False):
     df.sort_index(inplace=True)
 
     # 3. Configuration
-    lat = settings['open_meteo']['latitude']
-    lon = settings['open_meteo']['longitude']
-    tilt = settings['open_meteo']['tilt']
+    lat = settings['station']['latitude']
+    lon = settings['station']['longitude']
+    tilt = settings['station']['tilt']
     
     # Azimuth conversion (Open-Meteo South=0 to pvlib North=0)
-    om_azimuth = settings['open_meteo']['azimuth']
+    om_azimuth = settings['station']['azimuth']
     pvlib_azimuth = (om_azimuth + 180) % 360
     
     print(f"Location: {lat}, {lon}. Tilt: {tilt}. Azimuth (pvlib): {pvlib_azimuth}")
@@ -117,7 +117,7 @@ def calculate_effective_irradiance(is_future=False):
     # 7. Apply IAM (Incidence Angle Modifier) using ASHRAE model
     print("Applying ASHRAE IAM model...")
     # Get IAM parameter from settings, default to 0.05
-    iam_b = settings.get('pvlib', {}).get('parameters', {}).get('iam_b', 0.05)
+    iam_b = settings['model'].get('pvlib', {}).get('iam_b', 0.05)
     iam_direct = pvlib.iam.ashrae(aoi, b=iam_b)
     iam_diffuse = pvlib.iam.marion_diffuse('ashrae', surface_tilt=tilt)
     sky_iam = iam_diffuse['sky']
@@ -149,7 +149,7 @@ def calculate_effective_irradiance(is_future=False):
 
 
     # Get SAPM parameters from settings, default to close_mount_glass_glass
-    sapm_params = settings.get('pvlib', {}).get('parameters', {})
+    sapm_params = settings['model'].get('pvlib', {})
     s_a = sapm_params.get('sapm_a', -2.98)
     s_b = sapm_params.get('sapm_b', -0.0471)
     s_dT = sapm_params.get('sapm_deltaT', 1)

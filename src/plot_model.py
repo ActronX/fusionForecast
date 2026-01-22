@@ -11,7 +11,7 @@ def plot_model():
     print("Starting plotting pipeline...")
     
     # 1. Load Model
-    model_path = settings['model']['model_path']
+    model_path = settings['model']['path']
     if not os.path.exists(model_path):
         print(f"Error: Model file not found at {model_path}")
         return
@@ -25,97 +25,79 @@ def plot_model():
     # Let's do 24 hours future
     future = model.make_future_dataframe(periods=24, freq='h')
 
-    # 3. Handle Regressors (if any)
-    # We need to add regressor columns to 'future' df.
-    # We will fetch recent history + future regressor data.
-    # For simplicity in this test script, we might just re-fetch everything or try to align.
-    
-    regressor_name = settings['measurements']['m_regressor_history'] # 'solarcast'
-    
-    # Check if model has regressors
-    if regressor_name in model.extra_regressors:
-        print(f"Model uses regressor: {regressor_name}. Fetching data...")
+    # 3. Handle Regressors
+    # We need to add all extra regressor columns to 'future' df.
+    if model.extra_regressors:
+        print(f"Model uses regressors: {list(model.extra_regressors.keys())}. Fetching data...")
         db = InfluxDBWrapper()
         
         # We need data covering the entire 'future' range (history + 24h)
-        # However, getting exact history alignment can be tricky without re-querying everything.
-        # Let's simplistic approach: fetch last X days history + forecast
-        # Or easier: just fetch the regressor data for the timeframe of 'future' df
+        range_start = f"-{settings['model']['training_days'] + 1}d"
+        regressor_scale = settings['model']['preprocessing'].get('regressor_scale', 1.0)
         
-        start_date = future['ds'].min()
-        end_date = future['ds'].max()
+        # Determine fields to fetch
+        regressor_fields = list(model.extra_regressors.keys())
+        # We need to map these regressor names to InfluxDB fields if they differ
+        # In our pipeline, the regressor names in the model ARE the field names
         
-        # InfluxDB query for this range
-        # We need to be careful with timezones. Prophet 'ds' is usually naive or consistent.
-        # InfluxDB is UTC.
+        regressor_filter = " or ".join([f'r["_field"] == "{f}"' for f in regressor_fields])
         
-        # To make it robust for this test script, let's fetch a generous range of regressor data
-        range_start = f"-{settings['forecast_parameters']['training_days'] + 1}d"
-        
-        # We need prediction data for the future part
-        # And history data for the historical part
-        
-        # FETCH HISTORY REGRESSOR
+        # FETCH HISTORY REGRESSORS
         print("Fetching regressor history...")
-        regressor_scale = settings['preprocessing'].get('regressor_scale', 1.0)
         query_hist = f'''
-        from(bucket: "{settings['buckets']['b_regressor_history']}")
+        from(bucket: "{settings['influxdb']['buckets']['regressor_history']}")
           |> range(start: {range_start})
-          |> filter(fn: (r) => r["_measurement"] == "{settings['measurements']['m_regressor_history']}")
-          |> filter(fn: (r) => r["_field"] == "{settings['fields']['f_regressor_history']}")
+          |> filter(fn: (r) => r["_measurement"] == "{settings['influxdb']['measurements']['regressor_history']}")
+          |> filter(fn: (r) => {regressor_filter})
           |> map(fn: (r) => ({{ r with _value: r._value * {regressor_scale} }}))
           |> pivot(rowKey:["_time"], columnKey: ["_field"], valueColumn: "_value")
         '''
         df_hist = db.query_dataframe(query_hist)
         
-        # FETCH FORECAST REGRESSOR (for the future 24h)
+        # FETCH FORECAST REGRESSORS (for the future 24h)
         print("Fetching regressor forecast...")
         query_fcst = f'''
-        from(bucket: "{settings['buckets']['b_regressor_future']}")
+        from(bucket: "{settings['influxdb']['buckets']['regressor_future']}")
           |> range(start: -1h, stop: 48h) 
-          |> filter(fn: (r) => r["_measurement"] == "{settings['measurements']['m_regressor_future']}")
-          |> filter(fn: (r) => r["_field"] == "{settings['fields']['f_regressor_future']}")
+          |> filter(fn: (r) => r["_measurement"] == "{settings['influxdb']['measurements']['regressor_future']}")
+          |> filter(fn: (r) => {regressor_filter})
           |> map(fn: (r) => ({{ r with _value: r._value * {regressor_scale} }}))
           |> pivot(rowKey:["_time"], columnKey: ["_field"], valueColumn: "_value")
         '''
         df_fcst = db.query_dataframe(query_fcst)
         
-        # Concat and formatting
-        # We need one column 'ds' and one '{regressor_name}'
-        
-        # PRe-process history
+        # Prepare combined regressor dataframe
+        dfs_to_concat = []
         if not df_hist.empty:
-            df_hist.rename(columns={settings['fields']['f_regressor_history']: regressor_name}, inplace=True)
             if '_time' in df_hist.columns:
                 df_hist['ds'] = pd.to_datetime(df_hist['_time']).dt.tz_localize(None)
+            dfs_to_concat.append(df_hist)
         
-        # Pre-process forecast
         if not df_fcst.empty:
-            df_fcst.rename(columns={settings['fields']['f_regressor_future']: regressor_name}, inplace=True)
             if '_time' in df_fcst.columns:
                 df_fcst['ds'] = pd.to_datetime(df_fcst['_time']).dt.tz_localize(None)
-                
-        # Combine
-        df_reg = pd.concat([df_hist, df_fcst]).drop_duplicates(subset=['ds']).sort_values('ds')
-        
-        # Interpolate regressor to match future timestamps
-        # Set index
+            dfs_to_concat.append(df_fcst)
+            
+        if not dfs_to_concat:
+            print("Error: No regressor data found.")
+            return
+
+        df_reg = pd.concat(dfs_to_concat).drop_duplicates(subset=['ds']).sort_values('ds')
         df_reg = df_reg.set_index('ds').sort_index()
         
-        # Combine indices to allow time-based interpolation
+        # Interpolate each regressor column
         combined_index = df_reg.index.union(future['ds']).sort_values().drop_duplicates()
         
-        # Reindex and interpolate only the regressor column
-        # Ensure it is numeric
-        df_reg[regressor_name] = pd.to_numeric(df_reg[regressor_name], errors='coerce')
-        s_reg_interp = df_reg[regressor_name].reindex(combined_index).interpolate(method='time')
-        
-        # Extract only the rows corresponding to future['ds']
-        future[regressor_name] = s_reg_interp.reindex(future['ds']).values
-        
-        # Fill any remaining NaNs (e.g. at edges)
-        future[regressor_name] = future[regressor_name].ffill().bfill()
-        
+        for reg_name in regressor_fields:
+            if reg_name in df_reg.columns:
+                df_reg[reg_name] = pd.to_numeric(df_reg[reg_name], errors='coerce')
+                s_reg_interp = df_reg[reg_name].reindex(combined_index).interpolate(method='time')
+                future[reg_name] = s_reg_interp.reindex(future['ds']).values
+                future[reg_name] = future[reg_name].ffill().bfill()
+            else:
+                print(f"Warning: Regressor '{reg_name}' not found in fetched data. Filling with 0.")
+                future[reg_name] = 0.0
+
     print("Generating forecast...")
     forecast = model.predict(future)
     

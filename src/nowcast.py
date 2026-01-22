@@ -30,7 +30,7 @@ def run_nowcast():
          print("Warning: [nowcast] section missing in settings.toml. Using defaults.")
     
     use_damping = settings.get('nowcast', {}).get('use_damping_factor', True)
-    m_nowcast = settings.get('nowcast', {}).get('m_nowcast', 'nowcast')
+    m_nowcast = settings['influxdb']['measurements'].get('nowcast', 'nowcast')
     
     if not use_damping:
         print("Nowcast (Damping Factor) is disabled in settings.")
@@ -47,9 +47,9 @@ def run_nowcast():
     # 2. Fetch Data
     
     # A. Actual Production
-    bucket_live = settings.get('nowcast', {}).get('bucket_live', 'energy_meter')
-    measurement_live = settings.get('nowcast', {}).get('measurement_live', 'production')
-    field_live = settings.get('nowcast', {}).get('field_live', 'production')
+    bucket_live = settings['influxdb']['buckets'].get('live', 'energy_meter')
+    measurement_live = settings['influxdb']['measurements'].get('live', 'production')
+    field_live = settings['influxdb']['fields'].get('live', 'production')
     
     min_damping = settings.get('nowcast', {}).get('min_damping_factor', 0.75)
     max_damping = settings.get('nowcast', {}).get('max_damping_factor', 1.5)
@@ -66,12 +66,12 @@ def run_nowcast():
     df_prod = db.query_dataframe(query_prod)
     
     # B. Forecast Data (Original)
-    # bucket: fusionForecastData (b_target_forecast), measurement: dwd (m_forecast)
+    # bucket: fusionForecastData (target_forecast), measurement: dwd (forecast)
     query_forecast = f'''
-    from(bucket: "{settings['buckets']['b_target_forecast']}")
+    from(bucket: "{settings['influxdb']['buckets']['target_forecast']}")
       |> range(start: {int(start_time_history.timestamp())})
-      |> filter(fn: (r) => r["_measurement"] == "{settings['measurements']['m_forecast']}")
-      |> filter(fn: (r) => r["_field"] == "{settings['fields']['f_forecast']}")
+      |> filter(fn: (r) => r["_measurement"] == "{settings['influxdb']['measurements']['forecast']}")
+      |> filter(fn: (r) => r["_field"] == "{settings['influxdb']['fields']['forecast']}")
       |> pivot(rowKey:["_time"], columnKey: ["_field"], valueColumn: "_value")
     '''
     df_forecast = db.query_dataframe(query_forecast)
@@ -103,7 +103,7 @@ def run_nowcast():
         if field_live in df_prod.columns:
             df_prod.rename(columns={field_live: 'production'}, inplace=True)
         
-        f_forecast = settings['fields']['f_forecast']
+        f_forecast = settings['influxdb']['fields']['forecast']
         if f_forecast in df_forecast.columns:
             df_forecast.rename(columns={f_forecast: 'forecast'}, inplace=True)
         
@@ -136,8 +136,8 @@ def run_nowcast():
         
         now_ts = now_dt.timestamp()
         
-        # Get night threshold from settings (prophet.tuning.night_threshold)
-        night_threshold = settings.get('prophet', {}).get('tuning', {}).get('night_threshold', 50)
+        # Get night threshold from settings (model.tuning.night_threshold)
+        night_threshold = settings['model'].get('tuning', {}).get('night_threshold', 50)
         
         print("Calculating damping factor...")
         
@@ -186,14 +186,14 @@ def run_nowcast():
     # 4. Apply to Future Forecast
     # Use Flux date functions and pivot to match forecast.py style
     # get forecast_days from settings, default to 14 if not found
-    load_forecast_days = settings.get('forecast_parameters', {}).get('forecast_days', 14)
+    load_forecast_days = settings['model'].get('forecast_days', 14)
 
     query_future = f'''
     import "date"
-    from(bucket: "{settings['buckets']['b_target_forecast']}")
+    from(bucket: "{settings['influxdb']['buckets']['target_forecast']}")
       |> range(start: now(), stop: date.add(d: {load_forecast_days}d, to: now()))
-      |> filter(fn: (r) => r["_measurement"] == "{settings['measurements']['m_forecast']}")
-      |> filter(fn: (r) => r["_field"] == "{settings['fields']['f_forecast']}")
+      |> filter(fn: (r) => r["_measurement"] == "{settings['influxdb']['measurements']['forecast']}")
+      |> filter(fn: (r) => r["_field"] == "{settings['influxdb']['fields']['forecast']}")
       |> pivot(rowKey:["_time"], columnKey: ["_field"], valueColumn: "_value")
     '''
     df_future = db.query_dataframe(query_future)
@@ -203,7 +203,7 @@ def run_nowcast():
         return
         
     # Standardize column names (pivot results in field columns)
-    f_forecast = settings['fields']['f_forecast']
+    f_forecast = settings['influxdb']['fields']['forecast']
     if f_forecast not in df_future.columns:
          print(f"Error: Field '{f_forecast}' not found in future query result.")
          return
@@ -218,7 +218,7 @@ def run_nowcast():
         df_future['time'] = pd.to_datetime(df_future['time'])
         df_future.set_index('time', inplace=True)
     
-    pv_peak = settings.get('preprocessing', {}).get('max_power_clip', 10000) 
+    pv_peak = settings['model']['preprocessing'].get('max_power_clip', 10000) 
 
     adjusted_values = []
     
@@ -261,11 +261,11 @@ def run_nowcast():
     print(f"Writing {len(df_future)} nowcast points to measurement '{m_nowcast}'...")
     
     df_to_write = df_future[['adjusted']].copy()
-    df_to_write.rename(columns={'adjusted': settings['fields']['f_forecast']}, inplace=True)
+    df_to_write.rename(columns={'adjusted': settings['influxdb']['fields']['forecast']}, inplace=True)
     
     db.write_dataframe(
         df=df_to_write,
-        bucket=settings['buckets']['b_target_forecast'],
+        bucket=settings['influxdb']['buckets']['target_forecast'],
         measurement=m_nowcast
     )
     

@@ -25,17 +25,17 @@ def fetch_and_prepare_data():
     """Duplicates logic from train.py to get the training dataframe"""
     print("Fetching training data...")
     db = InfluxDBWrapper()
-    training_days = settings['forecast_parameters']['training_days']
+    training_days = settings['model']['training_days']
     range_start = f"-{training_days}d"
 
     # 1. Produced
-    produced_scale = settings['preprocessing'].get('produced_scale', 1.0)
-    produced_offset = settings['preprocessing'].get('produced_offset', '0m')
+    produced_scale = settings['model']['preprocessing'].get('produced_scale', 1.0)
+    produced_offset = settings['model']['preprocessing'].get('produced_offset', '0m')
     query_produced = f'''
-    from(bucket: "{settings['buckets']['b_history_produced']}")
+    from(bucket: "{settings['influxdb']['buckets']['history_produced']}")
       |> range(start: {range_start})
-      |> filter(fn: (r) => r["_measurement"] == "{settings['measurements']['m_produced']}")
-      |> filter(fn: (r) => r["_field"] == "{settings['fields']['f_produced']}")
+      |> filter(fn: (r) => r["_measurement"] == "{settings['influxdb']['measurements']['produced']}")
+      |> filter(fn: (r) => r["_field"] == "{settings['influxdb']['fields']['produced']}")
       |> map(fn: (r) => ({{ r with _value: r._value * {produced_scale} }}))
       |> timeShift(duration: {produced_offset})
       |> pivot(rowKey:["_time"], columnKey: ["_field"], valueColumn: "_value")
@@ -43,31 +43,31 @@ def fetch_and_prepare_data():
     df_produced = db.query_dataframe(query_produced)
     if df_produced.empty: return None
 
-    df_prophet = preprocess_data(df_produced, value_column=settings['fields']['f_produced'], is_prophet_input=True)
+    df_prophet = preprocess_data(df_produced, value_column=settings['influxdb']['fields']['produced'], is_prophet_input=True)
     df_prophet = prepare_prophet_dataframe(df_prophet, freq='30min')
 
     # 2. Regressor
-    regressor_offset = settings['preprocessing'].get('regressor_offset', '0m')
-    regressor_scale = settings['preprocessing'].get('regressor_scale', 1.0)
+    regressor_offset = settings['model']['preprocessing'].get('regressor_offset', '0m')
+    regressor_scale = settings['model']['preprocessing'].get('regressor_scale', 1.0)
     
     # Check if we should use Perez POA / Effective
-    use_pvlib = settings.get('prophet', {}).get('use_pvlib', False)
+    use_pvlib = settings['model'].get('prophet', {}).get('use_pvlib', False)
     
     if use_pvlib:
         regressor_fields = [
-            settings['fields'].get('f_effective_irradiance', 'effective_irradiance'),
-            settings['fields'].get('f_temp_cell', 'temperature_cell')
+            settings['influxdb']['fields'].get('effective_irradiance', 'effective_irradiance'),
+            settings['influxdb']['fields'].get('temp_cell', 'temperature_cell')
         ]
     else:
-        regressor_fields = [settings['fields']['f_regressor_history']]
+        regressor_fields = [settings['influxdb']['fields']['regressor_history']]
     
     # Filter for all requested regressor fields
     regressor_filter = " or ".join([f'r["_field"] == "{f}"' for f in regressor_fields])
     
     query_regressor = f'''
-    from(bucket: "{settings['buckets']['b_regressor_history']}")
+    from(bucket: "{settings['influxdb']['buckets']['regressor_history']}")
       |> range(start: {range_start})
-      |> filter(fn: (r) => r["_measurement"] == "{settings['measurements']['m_regressor_history']}")
+      |> filter(fn: (r) => r["_measurement"] == "{settings['influxdb']['measurements']['regressor_history']}")
       |> filter(fn: (r) => {regressor_filter})
       |> map(fn: (r) => ({{ r with _value: r._value * {regressor_scale} }}))
       |> timeShift(duration: {regressor_offset})
@@ -97,7 +97,7 @@ def evaluate_combination(params, df, regressor_names, initial, period, horizon):
     """
     try:
         m = Prophet(
-            yearly_seasonality=settings['prophet'].get('yearly_seasonality', False),
+            yearly_seasonality=settings['model']['prophet'].get('yearly_seasonality', False),
             daily_seasonality=True,
             weekly_seasonality=False,
             changepoint_prior_scale=params['changepoint_prior_scale'],
@@ -116,7 +116,7 @@ def evaluate_combination(params, df, regressor_names, initial, period, horizon):
         y_pred = df_cv['yhat']
         
         # Filter out low values (threshold configurable)
-        threshold = settings.get('prophet', {}).get('tuning', {}).get('night_threshold', 50)
+        threshold = settings['model'].get('tuning', {}).get('night_threshold', 50)
         valid_mask = y_true > threshold
         
         if valid_mask.sum() > 0:
@@ -153,23 +153,23 @@ def tune_hyperparameters():
 
     # Parameter grid
     param_grid = {
-        'changepoint_prior_scale': settings['prophet']['tuning'].get('changepoint_prior_scale', [0.05]),
-        'seasonality_prior_scale': settings['prophet']['tuning'].get('seasonality_prior_scale', [10.0]),
-        'regressor_prior_scale': settings['prophet']['tuning'].get('regressor_prior_scale', [0.5]),
-        'regressor_mode': settings['prophet']['tuning'].get('regressor_mode', ['multiplicative']),
-        'seasonality_mode': settings['prophet']['tuning'].get('seasonality_mode', ['multiplicative']),
+        'changepoint_prior_scale': settings['model']['tuning'].get('changepoint_prior_scale', [0.05]),
+        'seasonality_prior_scale': settings['model']['tuning'].get('seasonality_prior_scale', [10.0]),
+        'regressor_prior_scale': settings['model']['tuning'].get('regressor_prior_scale', [0.5]),
+        'regressor_mode': settings['model']['tuning'].get('regressor_mode', ['multiplicative']),
+        'seasonality_mode': settings['model']['tuning'].get('seasonality_mode', ['multiplicative']),
     }
 
     # Generate all combinations
     all_params = [dict(zip(param_grid.keys(), v)) for v in itertools.product(*param_grid.values())]
     
-    process_count = settings['prophet']['tuning'].get('process_count', 4)
+    process_count = settings['model']['tuning'].get('process_count', 4)
     print(f"Starting tuning with {len(all_params)} combinations using {process_count} cores...")
     
     # We need at least enough data for CV. 
     total_days = (df['ds'].max() - df['ds'].min()).days
     
-    training_days = settings['forecast_parameters']['training_days']
+    training_days = settings['model']['training_days']
     if total_days < (training_days * 0.9):
         print(f"Error: Insufficient historical data for tuning.")
         print(f"  > Requested: {training_days} days")

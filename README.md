@@ -43,39 +43,85 @@ FusionForecast is an ML-based tool for forecasting time series data (e.g., PV ge
 
 ## Configuration
 
-Configuration is managed via the `settings.toml` file.
+The logic of FusionForecast is controlled via the `settings.toml` file. This file follows a hierarchical structure to group related settings logically.
 
-> **Initial Setup:** Before starting, rename `settings.example.toml` to `settings.toml` and fill in your credentials.
+> [!IMPORTANT]
+> **Initial Setup:** Rename `settings.example.toml` to `settings.toml` before your first run. The example file contains valid structure but requires your specific credentials and coordinates.
 
-**This file is fully documented with comments for every setting.** Please refer to it for detailed explanations of all parameters.
+### Detailed Configuration Guide
 
-### Important Settings Sections
+#### 1. Station Settings `[station]`
+Defines the physical characteristics and location of your PV system. This is crucial for accurate solar position and irradiance calculations.
+- `latitude` / `longitude`: Decimal coordinates (e.g., Berlin: `52.52`, `13.40`).
+- `tilt`: The angle of your panels relative to the horizontal (0° = flat, 90° = vertical).
+- `azimuth`: Orientation of the panels. 
+    - **Note**: FusionForecast uses Open-Meteo convention: `0` = South, `-90` = East, `90` = West, `180` = North.
 
-- **[influxdb]**: URL, Token, and Org for database connection.
-- **[buckets]**: Names of source and target buckets.
-- **[measurements] / [fields]**: Names of Measurements and Fields in InfluxDB.
-- **[preprocessing]**:
-    - `max_power_clip`: Upper limit for outlier clipping.
-    - `regressor_offset`: Time offset for the regressor (e.g., `"-1h"`), applied via `timeShift()`.
-- **[forecast_parameters]**:
-    - `training_days`: Past period of training data (e.g., 731 days).
-    - `forecast_days`: Forecast horizon into the future (e.g., 14 days).
-- **[prophet]**:
-    - `regressor_prior_scale`: Prior scale for the regressor (controls flexibility).
-    - `seasonality_mode` / `regressor_mode`: Additive or Multiplicative.
-    - `use_pvlib`: If `true`, enables advanced physical modeling (Perez POA, IAM reflection losses, and SAPM cell temperature).
-        - **Note**: Physical modeling aims to describe the system more accurately to provide a slight performance edge. However, Prophet is also capable of "learning" these physical relationships implicitly from plain Shortwave Solar Radiation (GHI) or seasonaly patterns during training. just try it out and compare the results.
+#### 2. InfluxDB Connection `[influxdb]`
+Connection details for your InfluxDB v2 instance.
+- `url`: The full HTTP(S) URL of your server.
+- `token`: Your API access token with read/write permissions for the relevant buckets.
+- `org`: Your organization name.
 
-- **[pvlib.parameters]**:
-    - Parameters for the physical model (e.g., `iam_b` for reflection losses, and `sapm_a`, `sapm_b`, `sapm_deltaT` for the temperature model).
+#### 3. Data Mapping `[influxdb.buckets]` & `[influxdb.measurements]`
+Centralized mapping for where data is stored and retrieved.
+- **Buckets**:
+    - `history_produced`: Where your actual PV meters store past production.
+    - `regressor_history` / `regressor_future`: Storage for weather data (training vs. prediction).
+    - `target_forecast`: Where prediction results and nowcasts are written.
+    - `live`: Real-time power data used for damping factor calculation.
+- **Measurements**:
+    - Defines the table names within InfluxDB for each category (e.g., `pv`, `weather`, `nowcast`).
 
-- **[open_meteo]** / **[open_meteo.historic]** / **[open_meteo.forecast]**:
-    - Settings for fetching weather data (location, API URLs, models).
-    - `minutely_15`: Specifies the 15-minute weather variable to fetch (e.g., `global_tilted_irradiance_instant`).
-- **[open_meteo]**:
-    - `latitude` / `longitude`: GPS coordinates of your PV system.
-    - `azimuth`: Orientation of the PV panels (0 = South, -90 = East, 90 = West).
-    - `tilt`: Tilt angle of the PV panels.
+#### 4. Field Mapping `[influxdb.fields]`
+Individual field names within the measurements. **Every field is cross-referenced in the config comments to its bucket and measurement.**
+- `produced`: The field name for actual power/energy (e.g., `generatedWh`).
+- `forecast`: The target field for prediction output.
+- `regressor_history` / `regressor_future`: The primary irradiance field (GHI).
+- **Physical Model Fields** (Required if `use_pvlib = true`):
+    - `diffuse` / `direct`: IR components for Perez POA.
+    - `poa_perez`: Resulting raw plane-of-array irradiance.
+    - `effective_irradiance`: Irradiance after IAM reflection losses.
+    - `temp_amb` / `wind_speed` / `temp_cell`: Ambient and calculated cell temperatures.
+
+#### 5. Weather Source `[weather.open_meteo]`
+Configures how weather data is fetched from the Open-Meteo API.
+- `historic` / `forecast`: Separate endpoints for training history and future predictions.
+- `models`: Selection of the weather model (e.g., `best_match`, `icon_d2`).
+- `minutely_15`: The specific variable to fetch (default: `global_tilted_irradiance_instant`).
+
+#### 6. Model Parameters `[model]`
+- `path`: File path for the trained Prophet model (`.pkl`).
+- `training_days`: Period of history to use (default: 731 days for 2 full years).
+- `forecast_days`: How many days to predict into the future (default: 14).
+
+#### 7. Preprocessing `[model.preprocessing]`
+Fine-tuning of data before it entering the ML model.
+- `max_power_clip`: Hard limit in Watts to remove outliers or non-physical spikes.
+- `produced_scale` / `regressor_scale`: Multipliers to normalize data (e.g., if your meter stores kW but you want Watts).
+- `produced_offset` / `regressor_offset`: Crucial for aligning timestamps (e.g., if one source is 1h ahead).
+
+#### 8. Prophet ML Engine `[model.prophet]`
+Specific settings for the Facebook Prophet model.
+- `use_pvlib`: **The Physics Toggle.** Enables physical solar modelling.
+    - While Prophet learns seasonally, enabling `use_pvlib` allows the model to "understand" the physical geometry of your panels, potentially leading to better accuracy in complex weather.
+- `changepoint_prior_scale`: Controls trend flexibility. Lower = smoother, Higher = more reactive to changes.
+- `seasonality_prior_scale`: Intensity of yearly/daily cycles.
+- `regressor_prior_scale`: How much the model trusts the weather forecast vs. its internal patterns.
+
+#### 9. Physical Model coefficients `[model.pvlib]`
+Parameters for `pvlib` when `use_pvlib` is active.
+- `iam_b`: Incidence Angle Modifier coefficient (typical value 0.05).
+- `sapm_a` / `sapm_b` / `sapm_deltaT`: Sandia Array Performance Model coefficients for cell temperature.
+
+#### 10. Hyperparameter Tuning `[model.tuning]`
+- `process_count`: Parallel CPU cores for grid search.
+- `night_threshold`: Power level (Watts) below which data is ignored during evaluation to prevent "easy night wins" from skewing metrics.
+
+#### 11. Nowcast Settings `[nowcast]`
+Real-time damping factor correction.
+- `use_damping_factor`: Toggle the live correction.
+- `min_damping_factor` / `max_damping_factor`: Safety limits to prevent extreme forecast scaling based on temporary anomalies.
 
 ## Usage Workflow
 
@@ -224,25 +270,25 @@ This section describes which data is read from and written to InfluxDB, and why 
 *Scripts: `src/train.py`*
 
 - **Reads**:
-    - **Production History** (`b_history_produced`): Actual historical PV generation data.
-    - **Regressor History** (`b_regressor_history`): Historical weather data (e.g., solar irradiance) corresponding to the production history.
+    - **Production History** (`buckets.history_produced`): Actual historical PV generation data.
+    - **Regressor History** (`buckets.regressor_history`): Historical weather data (e.g., solar irradiance) corresponding to the production history.
 - **Why**: The Prophet model needs to learn the relationship between the target variable (Production) and time/weather. For example, it learns that "high irradiance = high production".
 
 ### 2. Forecasting (Prediction)
 *Scripts: `src/forecast.py`*
 
 - **Reads**:
-    - **Future Regressor** (`b_regressor_future`): The current weather forecast for the next few days.
+    - **Future Regressor** (`buckets.regressor_future`): The current weather forecast for the next few days.
 - **Writes**:
-    - **Target Forecast** (`b_target_forecast`): The predicted values for production.
+    - **Target Forecast** (`buckets.target_forecast`): The predicted values for production.
 - **Why**: To make a prediction for tomorrow, the model needs to know the expected weather (Regressor). The result is then stored so it can be visualized in Grafana or used by an energy management system (e.g., to charge a battery).
 
 ### 3. Data Fetching (External Sources)
 *Scripts: `src/fetch_future_weather.py`, `src/fetch_historic_weather.py`*
 
 - **Writes**:
-    - **Historic Weather** (`b_regressor_history`): Stores historical weather data fetched from Open-Meteo.
-    - **Future Weather** (`b_regressor_future`): Stores the latest weather forecast from Open-Meteo.
+    - **Historic Weather** (`buckets.regressor_history`): Stores historical weather data fetched from Open-Meteo.
+    - **Future Weather** (`buckets.regressor_future`): Stores the latest weather forecast from Open-Meteo.
 - **Why**: FusionForecast relies on external weather data (Irradiance) to make accurate PV predictions. This data must be actively fetched and stored in InfluxDB so the Training and Forecast scripts can access it.
 
 ## Automation (Linux Cron Jobs)
@@ -281,7 +327,7 @@ Logs will be stored in the `logs/` directory (created automatically by `install_
 
 # Smart Consumer Control (Node-RED)
 
-For users who want to use the forecast data to control physical devices (e.g., heating, EV charging), we provide a ready-to-use **Node-RED** flow.
+For users who want to use the forecast data to control physical devices (e.g., heating, EV charging), I provide a ready-to-use **Node-RED** flow.
 
 ![Wiring](node_red/Wiring.jpg)
 

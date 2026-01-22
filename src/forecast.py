@@ -10,7 +10,7 @@ def run_forecast():
     print("Starting forecast pipeline...")
     
     # 1. Load Model
-    model_path = settings['model']['model_path']
+    model_path = settings['model']['path']
     if not os.path.exists(model_path):
         print(f"Error: Model not found at {model_path}. Please run training first.")
         return
@@ -23,7 +23,7 @@ def run_forecast():
     db = InfluxDBWrapper()
     
     # Forecast Horizon
-    forecast_days = settings['forecast_parameters']['forecast_days']
+    forecast_days = settings['model']['forecast_days']
     # Start looking for regressor data from now (or end of history)
     # We just need future regressor data. 
     # Usually we query from now until now + forecast_days
@@ -32,19 +32,19 @@ def run_forecast():
     # Using date.add to define relative future time
     
     print(f"Fetching regressor data for next {forecast_days} days...")
-    regressor_offset = settings['preprocessing'].get('regressor_offset', '0m')
-    regressor_scale = settings['preprocessing'].get('regressor_scale', 1.0)
+    regressor_offset = settings['model']['preprocessing'].get('regressor_offset', '0m')
+    regressor_scale = settings['model']['preprocessing'].get('regressor_scale', 1.0)
     
     # Check if we should use Perez POA / Effective
-    use_pvlib = settings.get('prophet', {}).get('use_pvlib', False)
+    use_pvlib = settings['model'].get('prophet', {}).get('use_pvlib', False)
     
     if use_pvlib:
         regressor_fields = [
-            settings['fields'].get('f_effective_irradiance', 'effective_irradiance'),
-            settings['fields'].get('f_temp_cell', 'temperature_cell')
+            settings['influxdb']['fields'].get('effective_irradiance', 'effective_irradiance'),
+            settings['influxdb']['fields'].get('temp_cell', 'temperature_cell')
         ]
     else:
-        regressor_fields = [settings['fields']['f_regressor_future']]
+        regressor_fields = [settings['influxdb']['fields']['regressor_future']]
     
     print(f"Using regressor fields: {regressor_fields}")
     
@@ -53,9 +53,9 @@ def run_forecast():
     
     query_regressor = f'''
     import "date"
-    from(bucket: "{settings['buckets']['b_regressor_future']}")
+    from(bucket: "{settings['influxdb']['buckets']['regressor_future']}")
       |> range(start: now(), stop: date.add(d: {forecast_days}d, to: now()))
-      |> filter(fn: (r) => r["_measurement"] == "{settings['measurements']['m_regressor_future']}")
+      |> filter(fn: (r) => r["_measurement"] == "{settings['influxdb']['measurements']['regressor_future']}")
       |> filter(fn: (r) => {regressor_filter})
       |> map(fn: (r) => ({{ r with _value: r._value * {regressor_scale} }}))
       |> timeShift(duration: {regressor_offset})
@@ -65,9 +65,9 @@ def run_forecast():
     
     if df_regressor.empty:
         print("Error: No future regressor data found. Cannot forecast without 'solarcast'.")
-        print(f"  > Bucket: {settings['buckets']['b_regressor_future']}")
-        print(f"  > Measurement: {settings['measurements']['m_regressor_future']}")
-        print(f"  > Field: {regressor_field}")
+        print(f"  > Bucket: {settings['influxdb']['buckets']['regressor_future']}")
+        print(f"  > Measurement: {settings['influxdb']['measurements']['regressor_future']}")
+        print(f"  > Fields: {regressor_fields}")
         print("  > Possible causes: incorrect names locally or missing future data in DB.")
         return
 
@@ -115,7 +115,7 @@ def run_forecast():
     # Write to b_target_forecast, m_forecast, f_forecast
     
     # Apply Forecast Offset
-    forecast_offset = settings['preprocessing'].get('forecast_offset', '0m')
+    forecast_offset = settings['model']['preprocessing'].get('forecast_offset', '0m')
     if forecast_offset != "0m":
         try:
             print(f"Applying forecast offset: {forecast_offset}")
@@ -123,28 +123,28 @@ def run_forecast():
         except Exception as e:
             print(f"Warning: Could not apply forecast offset '{forecast_offset}': {e}")
 
-    print(f"Target Measurement: '{settings['measurements']['m_forecast']}'")
-    print(f"Target Field: '{settings['fields']['f_forecast']}'")
-    print(f"Writing forecast to {settings['buckets']['b_target_forecast']}...")
+    print(f"Target Measurement: '{settings['influxdb']['measurements']['forecast']}'")
+    print(f"Target Field: '{settings['influxdb']['fields']['forecast']}'")
+    print(f"Writing forecast to {settings['influxdb']['buckets']['target_forecast']}...")
     
     # Convert to list of Points or write DF directly
     # To write DF, we need to set the index to time
     forecast_to_write = forecast[['ds', 'yhat']].copy()
     
-    # Filter: Set values <= mape_threshold to 0
+    # Filter: Set values <= night_threshold to 0
     # This prevents writing small noise values to DB
-    threshold = settings.get('prophet', {}).get('tuning', {}).get('night_threshold', 50)
+    threshold = settings['model'].get('tuning', {}).get('night_threshold', 50)
     print(f"Applying output filter: values <= {threshold} set to 0")
     forecast_to_write.loc[forecast_to_write['yhat'] <= threshold, 'yhat'] = 0
     
-    forecast_to_write.rename(columns={'ds': 'time', 'yhat': settings['fields']['f_forecast']}, inplace=True)
+    forecast_to_write.rename(columns={'ds': 'time', 'yhat': settings['influxdb']['fields']['forecast']}, inplace=True)
     forecast_to_write.set_index('time', inplace=True)
     
     # Write
     db.write_dataframe(
         df=forecast_to_write,
-        bucket=settings['buckets']['b_target_forecast'],
-        measurement=settings['measurements']['m_forecast']
+        bucket=settings['influxdb']['buckets']['target_forecast'],
+        measurement=settings['influxdb']['measurements']['forecast']
     )
     
     print("Forecast complete.")

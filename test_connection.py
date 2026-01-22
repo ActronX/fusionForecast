@@ -25,13 +25,12 @@ def test_connection():
         print("\nChecking Configuration & Buckets...")
         
         
-        # Define the mapping of logical names to their config keys
-        # Define the mapping of logical names to their config keys
+        # Define the mapping of logical names to their sub-keys in [influxdb.buckets], etc.
         config_map = [
-            ("Production History", "b_history_produced", "m_produced", "f_produced", "Training: PV yield (Input)"),
-            ("Regressor History", "b_regressor_history", "m_regressor_history", "f_regressor_history", "Training: Weather (Input/Aligned)"),
-            ("Regressor Future", "b_regressor_future", "m_regressor_future", "f_regressor_future", "Forecast: Weather (Input)"),
-            ("Target Forecast (PV)", "b_target_forecast", "m_forecast", "f_forecast", "Output: PV Forecast (Result)"),
+            ("Production History", "history_produced", "produced", "produced", "Training: PV yield (Input)"),
+            ("Regressor History", "regressor_history", "regressor_history", "regressor_history", "Training: Weather (Input/Aligned)"),
+            ("Regressor Future", "regressor_future", "regressor_future", "regressor_future", "Forecast: Weather (Input)"),
+            ("Target Forecast (PV)", "target_forecast", "forecast", "forecast", "Output: PV Forecast (Result)"),
         ]
 
         expected_buckets = set()
@@ -40,9 +39,9 @@ def test_connection():
         print("-" * 140)
         
         for name, b_key, m_key, f_key, purpose in config_map:
-            bucket = settings['buckets'].get(b_key, "N/A")
-            meas = settings['measurements'].get(m_key, "N/A")
-            field = settings['fields'].get(f_key, "N/A")
+            bucket = settings['influxdb']['buckets'].get(b_key, "N/A")
+            meas = settings['influxdb']['measurements'].get(m_key, "N/A")
+            field = settings['influxdb']['fields'].get(f_key, "N/A")
             
             p_bucket = f"{bucket} ({b_key})" if bucket else "MISSING"
             if bucket: expected_buckets.add(bucket)

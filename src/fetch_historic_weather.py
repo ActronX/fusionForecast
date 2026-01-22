@@ -22,12 +22,12 @@ def fetch_weather_data():
     openmeteo = openmeteo_requests.Client(session=retry_session)
 
     # Get Open-Meteo parameters from settings
-    if 'open_meteo' not in settings:
-        print("Error: '[open_meteo]' section missing in settings.toml")
+    if 'weather' not in settings or 'open_meteo' not in settings['weather']:
+        print("Error: '[weather.open_meteo]' section missing in settings.toml")
         return pd.DataFrame()
 
-    om_settings = settings['open_meteo']
-    om_historic = om_settings.get('historic', {})
+    station_settings = settings['station']
+    om_historic = settings['weather']['open_meteo']['historic']
     
     url = om_historic.get('url', "https://historical-forecast-api.open-meteo.com/v1/forecast")
     
@@ -36,8 +36,8 @@ def fetch_weather_data():
         end_date = date.today().strftime("%Y-%m-%d")
 
     params = {
-        "latitude": om_settings['latitude'],
-        "longitude": om_settings['longitude'],
+        "latitude": station_settings['latitude'],
+        "longitude": station_settings['longitude'],
         "start_date": om_historic['start_date'],
         "end_date": end_date,
         "minutely_15": [
@@ -48,8 +48,8 @@ def fetch_weather_data():
             "wind_speed_10m"
         ],
         "models": om_historic.get('models', 'icon_d2'),
-        "tilt": om_settings['tilt'], 
-        "azimuth": om_settings['azimuth']
+        "tilt": station_settings['tilt'], 
+        "azimuth": station_settings['azimuth']
     }
 
     print(f"Requesting data from {url} with params: {params}")
@@ -102,13 +102,13 @@ def write_to_influx(df):
     """Writes the dataframe to InfluxDB."""
     
 
-    bucket = settings['buckets']['b_regressor_history']
-    measurement = settings['measurements']['m_regressor_history']
-    field_irradiance = settings['fields']['f_regressor_history']
-    field_diffuse = settings['fields'].get('f_diffuse', 'diffuse_radiation')
-    field_direct = settings['fields'].get('f_direct', 'direct_normal_irradiance')
-    field_temp_amb = settings['fields'].get('f_temp_amb', 'temperature_2m')
-    field_wind_speed = settings['fields'].get('f_wind_speed', 'wind_speed_10m')
+    bucket = settings['influxdb']['buckets']['regressor_history']
+    measurement = settings['influxdb']['measurements']['regressor_history']
+    field_irradiance = settings['influxdb']['fields']['regressor_history']
+    field_diffuse = settings['influxdb']['fields'].get('diffuse', 'diffuse_radiation')
+    field_direct = settings['influxdb']['fields'].get('direct', 'direct_normal_irradiance')
+    field_temp_amb = settings['influxdb']['fields'].get('temp_amb', 'temperature_2m')
+    field_wind_speed = settings['influxdb']['fields'].get('wind_speed', 'wind_speed_10m')
     
     db_wrapper = InfluxDBWrapper()
     write_api = db_wrapper.client.write_api(write_options=SYNCHRONOUS)
@@ -136,10 +136,7 @@ def main():
     print("Starting historic weather data fetch...")
 
     # Configuration Check
-    required_keys = ['b_regressor_history', 'm_regressor_history', 'f_regressor_history']
-    if any(k not in settings.get('buckets', {}) for k in ['b_regressor_history']) or \
-       any(k not in settings.get('measurements', {}) for k in ['m_regressor_history']) or \
-       any(k not in settings.get('fields', {}) for k in ['f_regressor_history']):
+    if 'influxdb' not in settings or 'buckets' not in settings['influxdb'] or 'regressor_history' not in settings['influxdb']['buckets']:
          print("Error: Missing required InfluxDB settings in settings.toml.")
          return
 
@@ -149,7 +146,7 @@ def main():
             write_to_influx(df)
             
             # Check if we should calculate Perez POA / Effective Irradiance
-            if settings.get('prophet', {}).get('use_pvlib', False):
+            if settings['model'].get('prophet', {}).get('use_pvlib', False):
                 print("Perez/Effective GHI calculation is enabled. Running calculation...")
                 calculate_effective_irradiance(is_future=False)
         else:

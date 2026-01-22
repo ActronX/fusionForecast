@@ -18,18 +18,18 @@ def train_model():
     db = InfluxDBWrapper()
     
     # Time range: last 30 days
-    training_days = settings['forecast_parameters']['training_days']
+    training_days = settings['model']['training_days']
     range_start = f"-{training_days}d"
     
     # 1. Fetch Produced Data (Target 'y')
-    print(f"Fetching produced data from {settings['buckets']['b_history_produced']}...")
-    produced_scale = settings['preprocessing'].get('produced_scale', 1.0)
-    produced_offset = settings['preprocessing'].get('produced_offset', '0m')
+    print(f"Fetching produced data from {settings['influxdb']['buckets']['history_produced']}...")
+    produced_scale = settings['model']['preprocessing'].get('produced_scale', 1.0)
+    produced_offset = settings['model']['preprocessing'].get('produced_offset', '0m')
     query_produced = f'''
-    from(bucket: "{settings['buckets']['b_history_produced']}")
+    from(bucket: "{settings['influxdb']['buckets']['history_produced']}")
       |> range(start: {range_start})
-      |> filter(fn: (r) => r["_measurement"] == "{settings['measurements']['m_produced']}")
-      |> filter(fn: (r) => r["_field"] == "{settings['fields']['f_produced']}")
+      |> filter(fn: (r) => r["_measurement"] == "{settings['influxdb']['measurements']['produced']}")
+      |> filter(fn: (r) => r["_field"] == "{settings['influxdb']['fields']['produced']}")
       |> map(fn: (r) => ({{ r with _value: r._value * {produced_scale} }}))
       |> timeShift(duration: {produced_offset})
       |> pivot(rowKey:["_time"], columnKey: ["_field"], valueColumn: "_value")
@@ -38,36 +38,36 @@ def train_model():
     
     if df_produced.empty:
         print(f"Error: No produced data found for training.")
-        print(f"  > Bucket: {settings['buckets']['b_history_produced']}")
-        print(f"  > Measurement: {settings['measurements']['m_produced']}")
-        print(f"  > Field: {settings['fields']['f_produced']}")
+        print(f"  > Bucket: {settings['influxdb']['buckets']['history_produced']}")
+        print(f"  > Measurement: {settings['influxdb']['measurements']['produced']}")
+        print(f"  > Field: {settings['influxdb']['fields']['produced']}")
         print("  > Possible causes: Data missing in time range, or incorrect measurement/field names.")
         return
 
     # Preprocess Produced
     # Data is retrieved from InfluxDB (raw or pre-aggregated)
     # Clean and conform to Prophet (ds, y)
-    df_prophet = preprocess_data(df_produced, value_column=settings['fields']['f_produced'], is_prophet_input=True)
+    df_prophet = preprocess_data(df_produced, value_column=settings['influxdb']['fields']['produced'], is_prophet_input=True)
     
     # Ensure produced data is resampled to 30min to match regressor
     # Use helper to standardize to 30min (handling index, tz, etc.)
     df_prophet = prepare_prophet_dataframe(df_prophet, freq='30min')
 
     # 2. Fetch Regressor Data (Solarcast - History)
-    print(f"Fetching regressor data from {settings['buckets']['b_regressor_history']}...")
-    regressor_offset = settings['preprocessing'].get('regressor_offset', '0m')
-    regressor_scale = settings['preprocessing'].get('regressor_scale', 1.0)
+    print(f"Fetching regressor data from {settings['influxdb']['buckets']['regressor_history']}...")
+    regressor_offset = settings['model']['preprocessing'].get('regressor_offset', '0m')
+    regressor_scale = settings['model']['preprocessing'].get('regressor_scale', 1.0)
     
     # Check if we should use Perez POA / Effective
-    use_pvlib = settings.get('prophet', {}).get('use_pvlib', False)
+    use_pvlib = settings['model'].get('prophet', {}).get('use_pvlib', False)
     
     if use_pvlib:
         regressor_fields = [
-            settings['fields'].get('f_effective_irradiance', 'effective_irradiance'),
-            settings['fields'].get('f_temp_cell', 'temperature_cell')
+            settings['influxdb']['fields'].get('effective_irradiance', 'effective_irradiance'),
+            settings['influxdb']['fields'].get('temp_cell', 'temperature_cell')
         ]
     else:
-        regressor_fields = [settings['fields']['f_regressor_history']]
+        regressor_fields = [settings['influxdb']['fields']['regressor_history']]
     
     print(f"Using regressor fields: {regressor_fields}")
     
@@ -75,9 +75,9 @@ def train_model():
     regressor_filter = " or ".join([f'r["_field"] == "{f}"' for f in regressor_fields])
     
     query_regressor = f'''
-    from(bucket: "{settings['buckets']['b_regressor_history']}")
+    from(bucket: "{settings['influxdb']['buckets']['regressor_history']}")
       |> range(start: {range_start})
-      |> filter(fn: (r) => r["_measurement"] == "{settings['measurements']['m_regressor_history']}")
+      |> filter(fn: (r) => r["_measurement"] == "{settings['influxdb']['measurements']['regressor_history']}")
       |> filter(fn: (r) => {regressor_filter})
       |> map(fn: (r) => ({{ r with _value: r._value * {regressor_scale} }}))
       |> timeShift(duration: {regressor_offset})
@@ -87,9 +87,9 @@ def train_model():
 
     if df_regressor.empty:
         print("Warning: No regressor data found. Model might fail if regressor is mandatory.")
-        print(f"  > Bucket: {settings['buckets']['b_regressor_history']}")
-        print(f"  > Measurement: {settings['measurements']['m_regressor_history']}")
-        print(f"  > Field: {settings['fields']['f_regressor_history']}")
+        print(f"  > Bucket: {settings['influxdb']['buckets']['regressor_history']}")
+        print(f"  > Measurement: {settings['influxdb']['measurements']['regressor_history']}")
+        print(f"  > Fields: {regressor_fields}")
     else:
         # Preprocess Regressor
         # Standardize regressor data using helper
@@ -126,11 +126,11 @@ def train_model():
 
     # 3. Configure and Train Model
     print("Configuring Prophet model...")
-    yearly_seasonality = settings['prophet'].get('yearly_seasonality', False)
-    changepoint_prior = settings['prophet'].get('changepoint_prior_scale', 0.05)
-    seasonality_prior = settings['prophet'].get('seasonality_prior_scale', 10.0)
-    seasonality_mode = settings['prophet'].get('seasonality_mode', 'multiplicative')
-    regressor_mode = settings['prophet'].get('regressor_mode', 'multiplicative')
+    yearly_seasonality = settings['model']['prophet'].get('yearly_seasonality', False)
+    changepoint_prior = settings['model']['prophet'].get('changepoint_prior_scale', 0.05)
+    seasonality_prior = settings['model']['prophet'].get('seasonality_prior_scale', 10.0)
+    seasonality_mode = settings['model']['prophet'].get('seasonality_mode', 'multiplicative')
+    regressor_mode = settings['model']['prophet'].get('regressor_mode', 'multiplicative')
 
     model = Prophet(
         yearly_seasonality=yearly_seasonality,
@@ -142,7 +142,7 @@ def train_model():
     )
     
     # Add Regressors
-    prior_scale = settings['prophet']['regressor_prior_scale']
+    prior_scale = settings['model']['prophet']['regressor_prior_scale']
     for reg_name in regressor_names:
         print(f"Adding regressor: {reg_name}")
         model.add_regressor(reg_name, mode=regressor_mode, prior_scale=prior_scale)
@@ -151,7 +151,7 @@ def train_model():
     model.fit(df_prophet)
     
     # 4. Save Model
-    model_path = settings['model']['model_path']
+    model_path = settings['model']['path']
     # Ensure directory exists
     os.makedirs(os.path.dirname(model_path), exist_ok=True)
     
