@@ -201,7 +201,7 @@ docker-compose up -d
 👉 **[Read the InfluxDB Documentation](influxdb-login-guide.md)**
 
 ## Manual Installation (Alternative)
-👉 **[Read the Manual Installation Documentation](manual-installation.md)**
+👉 **[Read the Manual Installation Documentation](manual_installation.md)**
 
 # Smart Consumer Control (Node-RED)
 
