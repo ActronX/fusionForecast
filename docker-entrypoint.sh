@@ -141,34 +141,36 @@ python3 test_connection.py || {
   exit 1
 }
 
-# Check if model exists, if not run initial training
+# 1. Fetch data required for operation (always update on startup)
+echo "Updating weather data..."
+echo "[1/2] Fetching historic weather data..."
+python3 -m src.fetch_historic_weather || echo "⚠ Warning: Failed to fetch historic weather data"
+
+echo "[2/2] Fetching future weather forecast..."
+python3 -m src.fetch_future_weather || echo "⚠ Warning: Failed to fetch future weather data"
+
+# 2. Check model and handle initial setup
 if [ ! -f "/app/models/prophet_model.pkl" ]; then
   echo "No trained model found. Running initial training..."
   echo "This may take several minutes..."
   
-  # Fetch historic weather data first
-  echo "[1/3] Fetching historic weather data..."
-  python3 -m src.fetch_historic_weather || {
-    echo "⚠ Warning: Failed to fetch historic weather data"
-  }
-  
   # Train model
-  echo "[2/3] Training Prophet model..."
+  echo "[1/2] Training Prophet model..."
   python3 -m src.train || {
     echo "✗ Training failed"
     exit 1
   }
   
   # Create initial forecast
-  echo "[3/3] Creating initial forecast..."
-  python3 -m src.fetch_future_weather && \
-  python3 -m src.forecast || {
-    echo "⚠ Warning: Initial forecast failed"
-  }
+  echo "[2/2] Creating initial forecast..."
+  python3 -m src.forecast || echo "⚠ Warning: Initial forecast failed"
   
   echo "✓ Initial setup complete"
 else
-  echo "✓ Trained model found, skipping initial training"
+  echo "✓ Trained model found."
+  # Optionally run a forecast update at startup to have fresh results
+  echo "Generating fresh forecast..."
+  python3 -m src.forecast || echo "⚠ Warning: Forecast update failed"
 fi
 
 # Do NOT start cron here, it's started by CMD in Dockerfile

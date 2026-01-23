@@ -75,6 +75,30 @@ The Docker setup uses environment variables to configure both InfluxDB and the a
 | `MODEL_TRAINING_DAYS`| Number of days to use for model training. | `30` |
 | `MAX_POWER_CLIP` | Max system output in Watts (physical limit).| `6000` |
 
+
+### Importing Historical PV Data (Optional)
+
+If you have historical generation data from other systems (e.g., CSV export from your inverter), you can import it into InfluxDB to improve the model training. This is best done **before** or during initial setup.
+
+**CSV Format:** Simple CSV **without a header line**:
+- **Column 1**: Timestamp in **UTC** (e.g., `YYYY-MM-DD HH:MM:SS`)
+- **Column 2**: Power/Energy value in Watts
+
+**Example (`my_data.csv`):**
+```csv
+2024-01-01 12:00:00, 1500.5
+2024-01-01 12:15:00, 1480.0
+2024-01-01 12:30:00, 1620.2
+2024-01-01 12:45:00, 1590.8
+2024-01-01 13:00:00, 1710.0
+2024-01-01 13:15:00, 1820.5
+```
+
+**How to Import:**
+1.  **Copy file** into container: `docker cp my_data.csv fusionforecast-app:/app/my_data.csv`
+2.  **Run import**: `docker exec fusionforecast-app python3 -m src.import_pv_history my_data.csv`
+3.  **Retrain model**: `docker exec fusionforecast-app python3 -m src.train`
+
 ### Container Management
 
 ```bash

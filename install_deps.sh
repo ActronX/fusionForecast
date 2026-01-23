@@ -2,7 +2,7 @@
 set -e
 
 echo "Installing system dependencies..."
-sudo apt-get update
+# sudo apt-get update
 # Install python3, pip, and venv if not present. 
 # Also build-essential might be needed for some python packages like Prophet (pystan) if no wheel exists, 
 # but prophet usually has wheels now.
