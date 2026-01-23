@@ -197,6 +197,8 @@ docker-compose down -v
 rm -rf models/ logs/
 docker-compose up -d
 ```
+### InfluxDB Login Guide for FusionForecast
+👉 **[Read the InfluxDB Documentation](influxdb-login-guide.md)**
 
 ## Manual Installation (Alternative)
 
