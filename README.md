@@ -76,9 +76,9 @@ The Docker setup uses environment variables to configure both InfluxDB and the a
 | `MAX_POWER_CLIP` | Max system output in Watts (physical limit).| `6000` |
 
 
-### Importing Historical PV Data (Optional)
+### Importing Historical PV Data (at least 30 days)
 
-If you have historical generation data from other systems (e.g., CSV export from your inverter), you can import it into InfluxDB to improve the model training. This is best done **before** or during initial setup.
+If you have historical generation data from other systems (e.g., CSV export from your inverter), you can import it into InfluxDB to improve the model training. **At least 30 days of historical data are required** to train the model effectively. This is best done **before** or during initial setup.
 
 **CSV Format:** Simple CSV **without a header line**:
 - **Column 1**: Timestamp in **UTC** (e.g., `YYYY-MM-DD HH:MM:SS`)
@@ -97,7 +97,34 @@ If you have historical generation data from other systems (e.g., CSV export from
 **How to Import:**
 1.  **Copy file** into container: `docker cp my_data.csv fusionforecast-app:/app/my_data.csv`
 2.  **Run import**: `docker exec fusionforecast-app python3 -m src.import_pv_history my_data.csv`
+#### Option 2: Manual Injection via Curl
+To train the model, you need to push historical data into the `energy_data` bucket using the field name `power_produced`:
+
+```bash
+# Push into 'energy_data' bucket for training
+curl -X POST "http://localhost:8086/api/v2/write?org=fusionforecast&bucket=energy_data&precision=s" \
+  -H "Authorization: Token YOUR_TOKEN" \
+  --data-raw "energy_meter power_produced=1500.0"
+```
 3.  **Retrain model**: `docker exec fusionforecast-app python3 -m src.train`
+
+### Pushing Live Data via Curl (Nowcast)
+
+For real-time forecasting and correction, you must regularly push your current PV production into the `live` bucket using the field name `production`:
+
+```bash
+curl -X POST "http://localhost:8086/api/v2/write?org=fusionforecast&bucket=energy_meter&precision=s" \
+  -H "Authorization: Token YOUR_TOKEN" \
+  --data-raw "energy_meter production=1250.5"
+```
+
+**Parameters for Curl:**
+- `bucket`: Target bucket (e.g., `energy_meter` for live, `energy_data` for history).
+- `--data-raw`: Format is `measurement field=value` (e.g., `energy_meter production=1200`).
+- `precision=s`: Uses the current server time for the data point.
+
+> [!TIP]
+> You can find all bucket, measurement, and field names in your `settings.toml` under the `[influxdb]` sections.
 
 ### Container Management
 
