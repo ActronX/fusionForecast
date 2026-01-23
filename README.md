@@ -41,7 +41,119 @@ FusionForecast is an ML-based tool for forecasting time series data (e.g., PV ge
    ```
    This script installs system dependencies, creates the venv, and necessary folders via `install_deps.sh`.
 
-## Configuration
+## Docker Deployment (Recommended)
+
+For production use, Docker provides the easiest and most reliable deployment method. The setup includes:
+- **Zero-Manual-Config**: `settings.toml` is automatically generated and synchronized from your `.env`.
+- **Auto-Initialization**: InfluxDB is automatically set up with all required buckets.
+- **Persistent Data**: Models and logs are stored on the host.
+
+### Quick Start
+
+1. **Clone Repository & Prepare Configuration**:
+   ```bash
+   git clone <repository-url>
+   cd fusionForecast
+   
+   # Copy and edit environment variables
+   cp .env.example .env
+   nano .env  # Set your coordinates and passwords
+   ```
+
+2. **Start Containers**:
+   ```bash
+   docker-compose up -d
+   ```
+   
+   This will:
+   - Start InfluxDB and create all required buckets automatically.
+   - Dynamically generate `settings.toml` inside the container using your `.env` values.
+   - Set up automated forecasts every 15 minutes via Cron.
+
+3. **Monitor Setup**:
+   ```bash
+   # Watch logs during initial setup
+   docker-compose logs -f fusionforecast
+   
+   # Check container status
+   docker-compose ps
+   ```
+
+### Configuration via `.env`
+
+The Docker setup uses environment variables to configure both InfluxDB and the application.
+
+| Variable | Description | Default |
+| :--- | :--- | :--- |
+| `INFLUXDB_TOKEN` | API Token for InfluxDB access. | (Predefined in `.env.example`) |
+| `INFLUXDB_ORG` | Organization name in InfluxDB. | `fusionforecast` |
+| `STATION_LATITUDE` | Decimal latitude of your location. | `52.5200` |
+| `STATION_LONGITUDE` | Decimal longitude of your location. | `13.4050` |
+| `STATION_TILT` | Tilt of your PV panels (0-90°). | `30` |
+| `STATION_AZIMUTH` | Azimuth (0=South, -90=East, 90=West). | `0` |
+| `MODEL_TRAINING_DAYS`| Number of days to use for model training. | `30` |
+| `MAX_POWER_CLIP` | Max system output in Watts (physical limit).| `6000` |
+
+### Container Management
+
+```bash
+# View logs
+docker-compose logs -f [fusionforecast|influxdb]
+
+# Restart services
+docker-compose restart
+
+# Stop all containers
+docker-compose down
+
+# Stop and remove volumes (⚠️ deletes all InfluxDB data!)
+docker-compose down -v
+
+# Rebuild and restart after code changes
+docker-compose up -d --build
+
+# Open shell in container
+docker exec -it fusionforecast-app bash
+```
+
+### Data Persistence
+
+Docker volumes ensure your data survives container restarts:
+- **influxdb-data**: All InfluxDB measurements and forecasts.
+- **./models**: Trained Prophet models (mounted from host).
+- **./logs**: Application logs (mounted from host).
+
+### Automated Updates
+
+The container automatically:
+- ✅ Fetches weather forecasts every 15 minutes.
+- ✅ Generates PV forecasts every 15 minutes.
+- ✅ Updates nowcast corrections every 15 minutes.
+- ✅ Retrains model monthly (1st of month at 02:00).
+
+### Troubleshooting
+
+- **Coordinates not updating?** If you change coordinates in `.env`, run `docker-compose up -d` to regenerate the `settings.toml` inside the container.
+- **InfluxDB connection failed?** Ensure `INFLUXDB_TOKEN` in `.env` matches the one used during the very first initialization.
+- **Bucket conflicts?** The system is idempotent. If a bucket already exists, it will skip creation and continue.
+
+**InfluxDB buckets missing:**
+```bash
+# Verify bucket creation
+docker-compose exec influxdb influx bucket list
+
+# If buckets are missing, restart InfluxDB
+docker-compose restart influxdb
+```
+
+**Reset everything:**
+```bash
+docker-compose down -v
+rm -rf models/ logs/
+docker-compose up -d
+```
+
+## Manual Installation (Alternative)
 
 The logic of FusionForecast is controlled via the `settings.toml` file. This file follows a hierarchical structure to group related settings logically.
 

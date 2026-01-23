@@ -1,0 +1,60 @@
+# Git and version control
+.git
+.gitignore
+.gitattributes
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.eggs/
+*.egg
+venv/
+env/
+ENV/
+
+# Project specific
+logs/
+*.log
+models/
+*.pkl
+*.html
+.cache
+.cache.sqlite
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker
+.dockerignore
+Dockerfile
+docker-compose.yml
+.env
+.env.example
+
+# Documentation (keep in image)
+# README.md is excluded since we want it
+
+# Test files
+# (Disabled because we need test_connection.py in the image)
+# test_*.py
+# *_test.py
+
+# Build artifacts
+build/
+dist/
+*.spec
+
+# Settings (will be mounted as volume)
+settings.toml
