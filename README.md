@@ -199,6 +199,7 @@ docker-compose up -d
 ```
 ### InfluxDB Login Guide for FusionForecast
 👉 **[Read the InfluxDB Documentation](influxdb-login-guide.md)**
+![influx](influx.jpg)
 
 ## Manual Installation (Alternative)
 👉 **[Read the Manual Installation Documentation](manual_installation.md)**
