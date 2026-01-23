@@ -22,25 +22,6 @@ FusionForecast is an ML-based tool for forecasting time series data (e.g., PV ge
     - **Frequency:** Data should preferably be stored every 15 to 60 minutes. It is not critical if individual data points are missing; the system is designed to handle gaps and inexact timestamps.
     - **Timezone:** The correct timezone must be observed. The system operates in UTC. An offset can be defined in the settings.
 
-## Installation
-
-1. Clone or extract the repository.
-2. Create virtual environment and install dependencies:
-
-   **Windows:**
-   ```batch
-   python -m venv venv
-   venv\Scripts\activate
-   pip install -r requirements.txt
-   ```
-
-   **Linux/Mac:**
-   ```bash
-   chmod +x install_deps.sh
-   ./install_deps.sh
-   ```
-   This script installs system dependencies, creates the venv, and necessary folders via `install_deps.sh`.
-
 ## Docker Deployment (Recommended)
 
 For production use, Docker provides the easiest and most reliable deployment method. The setup includes:
@@ -154,6 +135,25 @@ docker-compose up -d
 ```
 
 ## Manual Installation (Alternative)
+
+### Installation
+
+1. Clone or extract the repository.
+2. Create virtual environment and install dependencies:
+
+   **Windows:**
+   ```batch
+   python -m venv venv
+   venv\Scripts\activate
+   pip install -r requirements.txt
+   ```
+
+   **Linux/Mac:**
+   ```bash
+   chmod +x install_deps.sh
+   ./install_deps.sh
+   ```
+   This script installs system dependencies, creates the venv, and necessary folders via `install_deps.sh`.
 
 The logic of FusionForecast is controlled via the `settings.toml` file. This file follows a hierarchical structure to group related settings logically.
 
