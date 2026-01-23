@@ -188,34 +188,7 @@ Once logged in, you'll see the following key buckets in FusionForecast:
 
 ---
 
-## 7. Security Best Practices
-
-### API Token Management
-
-1. **Never commit tokens to Git:**
-   - Keep tokens in `.env` files that are `.gitignore`d
-   - Use environment variables in production
-
-2. **Rotate tokens periodically:**
-   - Log into the InfluxDB UI
-   - Go to **Load Data** > **API Tokens**
-   - Create a new token with the same permissions
-   - Update FusionForecast configuration
-   - Delete the old token
-
-3. **Use read-only tokens when possible:**
-   - For dashboards and monitoring, create tokens with limited read permissions
-   - Reserve all-access tokens for the FusionForecast application only
-
-### Network Security
-
-- **Development:** Access InfluxDB only from `localhost` or trusted internal IPs
-- **Production:** Use a firewall to restrict port 8086 to known hosts
-- **Consider using HTTPS** with a reverse proxy (e.g., Nginx) for remote access
-
----
-
-## 8. Quick Reference: Token-Based Requests
+## 7. Quick Reference: Token-Based Requests
 
 ### Write Data to InfluxDB
 
@@ -243,38 +216,6 @@ docker exec influxdb influx auth create \
   --read-bucket energy_meter,energy_data,forecasts,nowcasts
 ```
 
----
-
-## 9. Accessing InfluxDB from Outside Your Network
-
-### Option A: SSH Tunnel (Secure)
-
-Forward port 8086 from your remote server through SSH:
-
-```bash
-ssh -L 8086:localhost:8086 user@your-server.com
-# Then access http://localhost:8086 in your browser
-```
-
-### Option B: Reverse Proxy with Nginx
-
-Configure Nginx to forward requests to InfluxDB (requires SSL certificate):
-
-```nginx
-server {
-    listen 443 ssl;
-    server_name influx.yourdomain.com;
-
-    ssl_certificate /etc/ssl/certs/your-cert.crt;
-    ssl_certificate_key /etc/ssl/private/your-key.key;
-
-    location / {
-        proxy_pass http://localhost:8086;
-        proxy_set_header Authorization "Token YOUR_TOKEN";
-    }
-}
-```
-
 ### Option C: Change InfluxDB Bind Address (Not Recommended)
 
 In your `docker-compose.yml`, expose InfluxDB to all interfaces:
@@ -288,7 +229,7 @@ ports:
 
 ---
 
-## 10. Additional Resources
+## 8. Additional Resources
 
 - **InfluxDB Official Docs:** https://docs.influxdata.com/influxdb/v2/
 - **API Token Reference:** https://docs.influxdata.com/influxdb/v2/admin/tokens/
