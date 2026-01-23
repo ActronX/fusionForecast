@@ -78,7 +78,7 @@ The Docker setup uses environment variables to configure both InfluxDB and the a
 
 ### Importing Historical PV Data (at least 30 days)
 
-If you have historical generation data from other systems (e.g., CSV export from your inverter), you can import it into InfluxDB to improve the model training. **At least 30 days of historical data are required** to train the model effectively. This is best done **before** or during initial setup.
+If you have existing PV generation history (e.g., exported as CSV from your inverter or an online portal), you can import it into InfluxDB to train the model. **At least 30 days of historical data are required** to achieve accurate forecasts from the start. This is best done **before** or during initial setup.
 
 **CSV Format:** Simple CSV **without a header line**:
 - **Column 1**: Timestamp in **UTC** (e.g., `YYYY-MM-DD HH:MM:SS`)
@@ -98,19 +98,32 @@ If you have historical generation data from other systems (e.g., CSV export from
 1.  **Copy file** into container: `docker cp my_data.csv fusionforecast-app:/app/my_data.csv`
 2.  **Run import**: `docker exec fusionforecast-app python3 -m src.import_pv_history my_data.csv`
 #### Option 2: Manual Injection via Curl
-To train the model, you need to push historical data into the `energy_data` bucket using the field name `power_produced`:
+To train the model, you must push historical data into InfluxDB using the following mapping:
+- **Bucket**: `energy_data` (History)
+- **Measurement**: `energy_meter` (Produced)
+- **Field**: `power_produced` (Produced)
+
+If you have a script or sensor that can send HTTP requests, you can push data directly (Note: for historical data you **must** include a Unix timestamp):
 
 ```bash
-# Push into 'energy_data' bucket for training
+# Format: <measurement> <field>=<value> <timestamp_in_seconds>
+# Example: Two data points for Jan 1st 2024
 curl -X POST "http://localhost:8086/api/v2/write?org=fusionforecast&bucket=energy_data&precision=s" \
   -H "Authorization: Token YOUR_TOKEN" \
-  --data-raw "energy_meter power_produced=1500.0"
+  --data-raw "energy_meter power_produced=1500.0 1704110400"
+
+curl -X POST "http://localhost:8086/api/v2/write?org=fusionforecast&bucket=energy_data&precision=s" \
+  -H "Authorization: Token YOUR_TOKEN" \
+  --data-raw "energy_meter power_produced=1550.0 1704111300"
 ```
 3.  **Retrain model**: `docker exec fusionforecast-app python3 -m src.train`
 
 ### Pushing Live Data via Curl (Nowcast)
 
-For real-time forecasting and correction, you must regularly push your current PV production into the `live` bucket using the field name `production`:
+For real-time forecasting and correction, you must regularly push your current PV production into the `live` bucket using the following mapping:
+- **Bucket**: `energy_meter` (Live)
+- **Measurement**: `energy_meter` (Live)
+- **Field**: `production` (Live)
 
 ```bash
 curl -X POST "http://localhost:8086/api/v2/write?org=fusionforecast&bucket=energy_meter&precision=s" \
