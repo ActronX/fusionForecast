@@ -31,7 +31,7 @@ def import_csv(file_path):
         df['value'] = df['value'].astype('float64')
         
         # Convert time
-        df['time'] = pd.to_datetime(df['time'])
+        df['time'] = pd.to_datetime(df['time'], utc=True)
         df.set_index('time', inplace=True)
         
         # Scale if necessary
