@@ -21,10 +21,10 @@ forecast_stream = from(bucket: "forecast_results")
   |> aggregateWindow(every: 15m, fn: mean, createEmpty: false)
   |> map(fn: (r) => ({r with _field: "type_forecast"}))
 
-production_stream = from(bucket: "batterie")
+production_stream = from(bucket: "energy_meter")
   |> range(start: -2h, stop: now())
-  |> filter(fn: (r) => r["_measurement"] == "pv")
-  |> filter(fn: (r) => r["_field"] == "W") 
+  |> filter(fn: (r) => r["_measurement"] == "energy_meter")
+  |> filter(fn: (r) => r["_field"] == "production") 
   |> aggregateWindow(every: 15m, fn: mean, createEmpty: false)
   |> map(fn: (r) => ({r with _field: "type_production"}))
 
