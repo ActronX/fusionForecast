@@ -20,7 +20,7 @@ FusionForecast is an ML-based tool for forecasting time series data (e.g., PV ge
 - Access to relevant InfluxDB buckets
 - **Historical PV Data:** At least 30 days of historical generation data are required for training. Ideally, 1 to 2 years of data should be available for better accuracy.
     - **Frequency:** Data should preferably be stored every 15 to 60 minutes. It is not critical if individual data points are missing; the system is designed to handle gaps and inexact timestamps.
-    - **Timezone:** The correct timezone must be observed. The system operates in UTC. An offset can be defined in the settings.
+    - **Timezone:** The correct timezone must be observed. The system operates in UTC.
 
 ## Docker Deployment (Recommended)
 
