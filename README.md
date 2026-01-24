@@ -217,27 +217,6 @@ The container automatically:
 - ✅ Updates nowcast corrections every 15 minutes.
 - ✅ Retrains model monthly (1st of month at 02:00).
 
-### Troubleshooting
-
-- **Coordinates not updating?** If you change coordinates in `.env`, run `docker-compose up -d` to regenerate the `settings.toml` inside the container.
-- **InfluxDB connection failed?** Ensure `INFLUXDB_TOKEN` in `.env` matches the one used during the very first initialization.
-- **Bucket conflicts?** The system is idempotent. If a bucket already exists, it will skip creation and continue.
-
-**InfluxDB buckets missing:**
-```bash
-# Verify bucket creation
-docker-compose exec influxdb influx bucket list
-
-# If buckets are missing, restart InfluxDB
-docker-compose restart influxdb
-```
-
-**Reset everything:**
-```bash
-docker-compose down -v
-rm -rf models/ logs/
-docker-compose up -d
-```
 ### InfluxDB Login Guide for FusionForecast
 👉 **[Read the InfluxDB Documentation](influxdb-login-guide.md)**
 ![influx](influx.jpg)
