@@ -116,11 +116,6 @@ The easiest way is to mount your CSV file into the container. It will be automat
     ```
 3.  Start the container: `docker-compose up -d`
 
-**Dockerfile method (for custom images):**
-```dockerfile
-COPY measurements.csv /app/measurements.csv
-```
-
 #### Option 2: Manual Copy & Import (Interactive)
 If you prefer to import data into a running container without restarting:
 
