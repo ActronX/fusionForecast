@@ -74,7 +74,7 @@ The Docker setup uses environment variables to configure both InfluxDB and the a
 | `STATION_AZIMUTH` | Azimuth (0=South, -90=East, 90=West). | `0` |
 | `MODEL_TRAINING_DAYS`| Number of days to use for model training. | `30` |
 | `MAX_POWER_CLIP` | Max system output in Watts (physical limit).| `6000` |
-
+| `NIGHT_THRESHOLD` | Ignore values <= this during evaluation (Watts). | `50` |
 
 ### Importing Historical PV Data (at least 30 days)
 
@@ -97,6 +97,8 @@ If you have existing PV generation history (e.g., exported as CSV from your inve
 **How to Import:**
 1.  **Copy file** into container: `docker cp my_data.csv fusionforecast-app:/app/my_data.csv`
 2.  **Run import**: `docker exec fusionforecast-app python3 -m src.import_pv_history my_data.csv`
+3.  **Run Pipeline**: `docker exec fusionforecast-app python3 run_pipeline.py`
+    *(Fetches weather, retrains model, and calculates forecast)*
 #### Option 2: Manual Injection via Curl
 To train the model, you must push historical data into InfluxDB using the following mapping:
 - **Bucket**: `energy_data` (History)
@@ -116,7 +118,6 @@ curl -X POST "http://localhost:8086/api/v2/write?org=fusionforecast&bucket=energ
   -H "Authorization: Token YOUR_TOKEN" \
   --data-raw "energy_meter power_produced=1550.0 1704111300"
 ```
-3.  **Retrain model**: `docker exec fusionforecast-app python3 -m src.train`
 
 ### Pushing Live Data via Curl (Nowcast)
 
@@ -159,6 +160,9 @@ docker-compose up -d --build
 
 # Open shell in container
 docker exec -it fusionforecast-app bash
+
+# Apply changes from .env (recreates container with new env vars, no rebuild needed)
+docker-compose up -d
 ```
 
 ### Data Persistence

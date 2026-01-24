@@ -45,7 +45,8 @@ COPY docker-entrypoint.sh /docker-entrypoint.sh
 COPY docker-crontab /etc/cron.d/fusionforecast
 
 # Set permissions and install crontab
-RUN chmod +x /docker-entrypoint.sh && \
+RUN dos2unix /docker-entrypoint.sh && \
+    chmod +x /docker-entrypoint.sh && \
     dos2unix /etc/cron.d/fusionforecast && \
     chmod 0644 /etc/cron.d/fusionforecast && \
     touch /var/log/cron.log && \
