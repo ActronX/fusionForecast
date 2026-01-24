@@ -81,10 +81,18 @@ The Docker setup uses environment variables to configure both InfluxDB and the a
 If you have existing PV generation history (e.g., exported as CSV from your inverter or an online portal), you can import it into InfluxDB to train the model. **At least 30 days of historical data are required** to achieve accurate forecasts from the start. This is best done **before** or during initial setup.
 
 **CSV Format:** Simple CSV **without a header line**:
-- **Column 1**: Timestamp in **UTC** (e.g., `YYYY-MM-DD HH:MM:SS`)
+
+> [!IMPORTANT]
+> **Important:** The CSV file must **NOT** contain a header row (e.g., "Timestamp,Value"). Column 1 must be the timestamp, and Column 2 the value.
+- **Column 1**: Timestamp in **UTC**. Supported formats include:
+    - ISO 8601: `2024-12-31T12:00:00`
+    - Standard: `2024-12-31 12:00:00`
+    - Date with points/slashes: `2024.12.31 12:00` or `12/31/2024 12:00`
+    - With Timezone: `2024-12-31 12:00:00+02:00` (will be converted to UTC)
+    - *Note: For unambiguous parsing, `YYYY-MM-DD` format is recommended.*
 - **Column 2**: Power/Energy value in Watts
 
-**Example (`my_data.csv`):**
+**Example (`measurements.csv`):**
 ```csv
 2024-12-31 12:00:00, 1500.5
 2024-12-31 12:15:00, 1480.0
@@ -95,11 +103,33 @@ If you have existing PV generation history (e.g., exported as CSV from your inve
 ```
 
 **How to Import:**
-1.  **Copy file** into container: `docker cp my_data.csv fusionforecast-app:/app/my_data.csv`
-2.  **Run import**: `docker exec fusionforecast-app python3 -m src.import_pv_history my_data.csv`
+
+#### Option 1: Volume Import (Recommended)
+The easiest way is to mount your CSV file into the container. It will be automatically imported on startup.
+
+**Docker Compose method:**
+1.  Save your CSV file as `measurements.csv` in the same folder as `docker-compose.yml`.
+2.  Add the volume to `docker-compose.yml`:
+    ```yaml
+    volumes:
+      - ./measurements.csv:/app/measurements.csv
+    ```
+3.  Start the container: `docker-compose up -d`
+
+**Dockerfile method (for custom images):**
+```dockerfile
+COPY measurements.csv /app/measurements.csv
+```
+
+#### Option 2: Manual Copy & Import (Interactive)
+If you prefer to import data into a running container without restarting:
+
+1.  **Copy file** into container: `docker cp measurements.csv fusionforecast-app:/app/measurements.csv`
+2.  **Run import**: `docker exec fusionforecast-app python3 -m src.import_pv_history measurements.csv`
 3.  **Run Pipeline**: `docker exec fusionforecast-app python3 run_pipeline.py`
     *(Fetches weather, retrains model, and calculates forecast)*
-#### Option 2: Manual Injection via Curl
+
+#### Option 3: Manual Injection via Curl
 To train the model, you must push historical data into InfluxDB using the following mapping:
 - **Bucket**: `energy_data` (History)
 - **Measurement**: `energy_meter` (Produced)

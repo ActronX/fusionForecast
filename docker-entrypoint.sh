@@ -168,6 +168,15 @@ if [ ! -f "/app/models/prophet_model.pkl" ]; then
   
   # Train model
   echo "[1/2] Training Prophet model..."
+  # 3. Check for "Build-Time" or Volume-mounted data
+  # If a file named 'measurements.csv' is found in /app/ (e.g. via COPY in Dockerfile or volume mount),
+  # we automatically import it. This allows for fully automated deployments with pre-baked data.
+  if [ -f "/app/measurements.csv" ]; then
+    echo "Files detected at /app/measurements.csv. Auto-importing..."
+    python3 -m src.import_pv_history /app/measurements.csv
+    echo "✓ Auto-import complete."
+  fi
+
   # Train model
   echo "[1/2] Training Prophet model..."
   if ! python3 -m src.train; then
@@ -177,11 +186,17 @@ if [ ! -f "/app/models/prophet_model.pkl" ]; then
     echo "The container is running, but the forecast model could not be trained"
     echo "because no historical PV data was found in InfluxDB."
     echo ""
-    echo "👉 ACTION REQUIRED:"
-    echo "1. Import your historical data (CSV) now."
-    echo "   a) Copy file: docker cp <local_file.csv> fusionforecast-app:/app/my_data.csv"
-    echo "   b) Import:    docker exec fusionforecast-app python3 -m src.import_pv_history my_data.csv"
-    echo "2. Then run the pipeline manually:"
+    echo "👉 ACTION REQUIRED (Choose one):"
+    echo "Option A: Manual Import (Running Container)"
+    echo "   1. Copy file: docker cp <local_file.csv> fusionforecast-app:/app/measurements.csv"
+    echo "   2. Import:    docker exec fusionforecast-app python3 -m src.import_pv_history measurements.csv"
+    echo ""
+    echo "Option B: Build-Time / Volume Import"
+    echo "   1. Place your CSV file at /app/measurements.csv inside the container"
+    echo "      (via Dockerfile COPY or docker-compose volume)."
+    echo "   2. Restart the container."
+    echo ""
+    echo "Then run the pipeline manually:"
     echo "   Command:      docker exec fusionforecast-app python3 run_pipeline.py"
     echo "=================================================================="
   else
