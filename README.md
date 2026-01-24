@@ -188,6 +188,10 @@ docker exec -it fusionforecast-app bash
 
 # Apply changes from .env (recreates container with new env vars, no rebuild needed)
 docker-compose up -d
+
+# Force full rebuild (e.g. after code changes)
+docker-compose build --no-cache fusionforecast
+docker-compose up -d
 ```
 
 ### Data Persistence
