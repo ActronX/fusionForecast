@@ -168,16 +168,28 @@ if [ ! -f "/app/models/prophet_model.pkl" ]; then
   
   # Train model
   echo "[1/2] Training Prophet model..."
-  python3 -m src.train || {
-    echo "✗ Training failed"
-    exit 1
-  }
-  
-  # Create initial forecast
-  echo "[2/2] Creating initial forecast..."
-  python3 -m src.forecast || echo "⚠ Warning: Initial forecast failed"
-  
-  echo "✓ Initial setup complete"
+  # Train model
+  echo "[1/2] Training Prophet model..."
+  if ! python3 -m src.train; then
+    echo "=================================================================="
+    echo "⚠ INITIAL TRAINING FAILED (Expected if no data is imported yet)"
+    echo "=================================================================="
+    echo "The container is running, but the forecast model could not be trained"
+    echo "because no historical PV data was found in InfluxDB."
+    echo ""
+    echo "👉 ACTION REQUIRED:"
+    echo "1. Import your historical data (CSV) now."
+    echo "   a) Copy file: docker cp <local_file.csv> fusionforecast-app:/app/my_data.csv"
+    echo "   b) Import:    docker exec fusionforecast-app python3 -m src.import_pv_history my_data.csv"
+    echo "2. Then run the pipeline manually:"
+    echo "   Command:      docker exec fusionforecast-app python3 run_pipeline.py"
+    echo "=================================================================="
+  else
+    # Create initial forecast only if training succeeded
+    echo "[2/2] Creating initial forecast..."
+    python3 -m src.forecast || echo "⚠ Warning: Initial forecast failed"
+    echo "✓ Initial setup complete"
+  fi
 else
   echo "✓ Trained model found."
   # Optionally run a forecast update at startup to have fresh results

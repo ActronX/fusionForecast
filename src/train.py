@@ -1,5 +1,6 @@
 
 import os
+import sys
 import pickle
 import pandas as pd
 import logging
@@ -42,7 +43,8 @@ def train_model():
         print(f"  > Measurement: {settings['influxdb']['measurements']['produced']}")
         print(f"  > Field: {settings['influxdb']['fields']['produced']}")
         print("  > Possible causes: Data missing in time range, or incorrect measurement/field names.")
-        return
+        print("  > Possible causes: Data missing in time range, or incorrect measurement/field names.")
+        sys.exit(1)
 
     # Preprocess Produced
     # Data is retrieved from InfluxDB (raw or pre-aggregated)
@@ -113,7 +115,7 @@ def train_model():
     
     if df_prophet.empty:
         print("Error: Training data empty after merging regressor. Check time alignment.")
-        return
+        sys.exit(1)
 
     # Check if we have enough data as requested in settings
     data_duration_days = (df_prophet['ds'].max() - df_prophet['ds'].min()).days
@@ -122,7 +124,8 @@ def train_model():
         print(f"  > Requested: {training_days} days")
         print(f"  > Available: {data_duration_days} days")
         print("  > Please ensure buckets contain enough history or reduce 'training_days' in settings.toml")
-        return
+        print("  > Please ensure buckets contain enough history or reduce 'training_days' in settings.toml")
+        sys.exit(1)
 
     # 3. Configure and Train Model
     print("Configuring Prophet model...")
