@@ -41,7 +41,15 @@ For production use, Docker provides the easiest and most reliable deployment met
    nano .env  # Set your coordinates and passwords
    ```
 
-2. **Start Containers**:
+2. **Prepare Data (Recommended)**:
+   - Place your historical data file as `measurements.csv` in the folder.
+   - Edit `docker-compose.yml` and uncomment the volume line:
+     ```yaml
+     volumes:
+       - ./measurements.csv:/app/measurements.csv
+     ```
+
+3. **Start Containers**:
    ```bash
    docker-compose up -d
    ```
@@ -51,7 +59,7 @@ For production use, Docker provides the easiest and most reliable deployment met
    - Dynamically generate `settings.toml` inside the container using your `.env` values.
    - Set up automated forecasts every 15 minutes via Cron.
 
-3. **Monitor Setup**:
+4. **Monitor Setup**:
    ```bash
    # Watch logs during initial setup
    docker-compose logs -f fusionforecast
