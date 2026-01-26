@@ -2,6 +2,7 @@ import os
 import pickle
 import pandas as pd
 from prophet.plot import plot_plotly, plot_components_plotly
+import plotly.graph_objs as go
 from src.config import settings
 from src.db import InfluxDBWrapper
 import time
@@ -20,26 +21,21 @@ def plot_model():
     with open(model_path, "rb") as f:
         model = pickle.load(f)
 
-    # 2. Setup Future Dataframe (similar to forecast.py but maybe just a short lookahead for viz)
+    # 2. Setup Future Dataframe 
     # We want to see how it fits history + forecast
-    # Let's do 24 hours future
-    future = model.make_future_dataframe(periods=24, freq='h')
+    future = model.make_future_dataframe(periods=48, freq='30min') # 24 hours of 30min chunks approx
 
     # 3. Handle Regressors
-    # We need to add all extra regressor columns to 'future' df.
     if model.extra_regressors:
         print(f"Model uses regressors: {list(model.extra_regressors.keys())}. Fetching data...")
         db = InfluxDBWrapper()
         
-        # We need data covering the entire 'future' range (history + 24h)
+        # We need data covering the entire 'future' range (history + future)
+        # We fetch a bit more history to be safe
         range_start = f"-{settings['model']['training_days'] + 1}d"
         regressor_scale = settings['model']['preprocessing'].get('regressor_scale', 1.0)
         
-        # Determine fields to fetch
         regressor_fields = list(model.extra_regressors.keys())
-        # We need to map these regressor names to InfluxDB fields if they differ
-        # In our pipeline, the regressor names in the model ARE the field names
-        
         regressor_filter = " or ".join([f'r["_field"] == "{f}"' for f in regressor_fields])
         
         # FETCH HISTORY REGRESSORS
@@ -54,7 +50,7 @@ def plot_model():
         '''
         df_hist = db.query_dataframe(query_hist)
         
-        # FETCH FORECAST REGRESSORS (for the future 24h)
+        # FETCH FORECAST REGRESSORS
         print("Fetching regressor forecast...")
         query_fcst = f'''
         from(bucket: "{settings['influxdb']['buckets']['regressor_future']}")
@@ -66,7 +62,7 @@ def plot_model():
         '''
         df_fcst = db.query_dataframe(query_fcst)
         
-        # Prepare combined regressor dataframe
+        # Combine
         dfs_to_concat = []
         if not df_hist.empty:
             if '_time' in df_hist.columns:
@@ -80,49 +76,102 @@ def plot_model():
             
         if not dfs_to_concat:
             print("Error: No regressor data found.")
-            return
-
-        df_reg = pd.concat(dfs_to_concat).drop_duplicates(subset=['ds']).sort_values('ds')
-        df_reg = df_reg.set_index('ds').sort_index()
-        
-        # Interpolate each regressor column
-        combined_index = df_reg.index.union(future['ds']).sort_values().drop_duplicates()
-        
-        for reg_name in regressor_fields:
-            if reg_name in df_reg.columns:
-                df_reg[reg_name] = pd.to_numeric(df_reg[reg_name], errors='coerce')
-                s_reg_interp = df_reg[reg_name].reindex(combined_index).interpolate(method='time')
-                future[reg_name] = s_reg_interp.reindex(future['ds']).values
-                future[reg_name] = future[reg_name].ffill().bfill()
-            else:
-                print(f"Warning: Regressor '{reg_name}' not found in fetched data. Filling with 0.")
-                future[reg_name] = 0.0
+        else:
+            df_reg = pd.concat(dfs_to_concat).drop_duplicates(subset=['ds']).sort_values('ds')
+            df_reg = df_reg.set_index('ds').sort_index()
+            
+            # Interpolate onto future
+            combined_index = df_reg.index.union(future['ds']).sort_values().drop_duplicates()
+            
+            for reg_name in regressor_fields:
+                if reg_name in df_reg.columns:
+                    df_reg[reg_name] = pd.to_numeric(df_reg[reg_name], errors='coerce')
+                    s_reg_interp = df_reg[reg_name].reindex(combined_index).interpolate(method='time')
+                    future[reg_name] = s_reg_interp.reindex(future['ds']).values
+                    future[reg_name] = future[reg_name].ffill().bfill()
+                else:
+                    future[reg_name] = 0.0
 
     print("Generating forecast...")
     forecast = model.predict(future)
     
     # 4. Plot
-    print("Creating interactive plots...")
+    print("Creating improved interactive plots...")
     
-    # Main forecast plot
+    # Define zoom range: Last 14 days + Future
+    last_date = forecast['ds'].max()
+    start_zoom = last_date - pd.Timedelta(days=14)
+    
+    # --- Plot 1: Main Overview (Zoomed) ---
     fig1 = plot_plotly(model, forecast)
-    fig1_path = os.path.abspath("forecast_plot.html")
+    fig1.update_layout(
+        title="Forecast Overview (Zoomed: Last 14 Days)",
+        xaxis_range=[start_zoom, last_date],
+        xaxis_title="Date",
+        yaxis_title="Energy Production",
+        legend=dict(orientation="h", y=1.02, x=0.5, xanchor="center")
+    )
+    fig1_path = os.path.abspath("plot_overview.html")
     fig1.write_html(fig1_path)
-    print(f"Saved forecast plot to: {fig1_path}")
     
-    # Components plot
+    # --- Plot 2: Components (Trend, Week, Day) ---
+    # Prophet Standard Components
     fig2 = plot_components_plotly(model, forecast)
-    fig2_path = os.path.abspath("components_plot.html")
+    fig2.update_layout(title="Model Components (Trend & Seasonality)")
+    fig2_path = os.path.abspath("plot_components.html")
     fig2.write_html(fig2_path)
-    print(f"Saved components plot to: {fig2_path}")
     
-    # Open in browser
+    # --- Plot 3: Regressor Impact (If applicable) ---
+    fig3_path = None
+    if model.extra_regressors:
+        reg_names = list(model.extra_regressors.keys())
+        
+        # Create a clearer impact plot
+        fig3 = go.Figure()
+        
+        # Add Total Prediction as reference
+        fig3.add_trace(go.Scatter(
+            x=forecast['ds'], 
+            y=forecast['yhat'], 
+            name='Total Predicted',
+            line=dict(color='black', width=2)
+        ))
+        
+        # Add each regressor's contribution
+        # Note: These values are the *effect* on y, not the raw input
+        for reg in reg_names:
+            if reg in forecast.columns:
+                fig3.add_trace(go.Scatter(
+                    x=forecast['ds'], 
+                    y=forecast[reg], 
+                    name=f'Impact: {reg}',
+                    visible='legendonly' # Hidden by default to avoid clutter
+                ))
+        
+        # Also add the raw input scaled? No, keeps it simple.
+        
+        fig3.update_layout(
+            title="Regressor Impact Analysis (Select in Legend)",
+            xaxis_range=[start_zoom, last_date],
+            yaxis_title="Contribution to Prediction",
+            template="plotly_white"
+        )
+        fig3_path = os.path.abspath("plot_regressors.html")
+        fig3.write_html(fig3_path)
+
     print("Opening plots in browser...")
     webbrowser.open(f"file://{fig1_path}")
     time.sleep(1)
-    webbrowser.open(f"file://{fig2_path}")
+    if fig3_path:
+        webbrowser.open(f"file://{fig3_path}")
+    else:
+        webbrowser.open(f"file://{fig2_path}")
     
-    print("Done.")
+    print("Done. Files saved:")
+    print(f" - {fig1_path}")
+    print(f" - {fig2_path}")
+    if fig3_path:
+        print(f" - {fig3_path}")
 
 if __name__ == "__main__":
     plot_model()

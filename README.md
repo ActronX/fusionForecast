@@ -74,15 +74,15 @@ The Docker setup uses environment variables to configure both InfluxDB and the a
 
 | Variable | Description | Default |
 | :--- | :--- | :--- |
-| `INFLUXDB_TOKEN` | API Token for InfluxDB access. | (Predefined in `.env.example`) |
+| `INFLUXDB_TOKEN` | API Token for InfluxDB access. | (Predefined) |
 | `INFLUXDB_ORG` | Organization name in InfluxDB. | `fusionforecast` |
 | `STATION_LATITUDE` | Decimal latitude of your location. | `52.5200` |
 | `STATION_LONGITUDE` | Decimal longitude of your location. | `13.4050` |
-| `STATION_TILT` | Tilt of your PV panels (0-90°). | `30` |
+| `STATION_TILT` | Tilt (0=flat, 90=vertical). | `30` |
 | `STATION_AZIMUTH` | Azimuth (0=South, -90=East, 90=West). | `0` |
-| `MODEL_TRAINING_DAYS`| Number of days to use for model training. | `30` |
-| `MAX_POWER_CLIP` | Max system output in Watts (physical limit).| `6000` |
-| `NIGHT_THRESHOLD` | Ignore values <= this during evaluation (Watts). | `50` |
+| `MODEL_TRAINING_DAYS`| Days of history to use for training. | `30` |
+| `MAX_POWER_CLIP` | Max system output in Watts (outlier clipping).| `6000` |
+| `NIGHT_THRESHOLD` | Watts threshold below which values are treated as night/0. | `50` |
 
 ### Importing Historical PV Data (at least 30 days)
 
