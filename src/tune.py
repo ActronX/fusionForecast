@@ -1,187 +1,213 @@
 import pandas as pd
 import numpy as np
 from prophet import Prophet
-from prophet.diagnostics import cross_validation, performance_metrics
-import itertools
+from prophet.diagnostics import cross_validation
 import sys
 import os
-import concurrent.futures
 import traceback
-
 import logging
+import optuna
+from functools import partial
+import multiprocessing
+
 # Ensure src can be imported
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
-# Silence cmdstanpy logs
+# Silence cmdstanpy/optuna logs
 logging.getLogger('cmdstanpy').disabled = True
 logging.getLogger('cmdstanpy').propagate = False
 logging.getLogger('cmdstanpy').setLevel(logging.CRITICAL)
+optuna.logging.set_verbosity(optuna.logging.WARNING)
 
 from src.config import settings
 from src.data_loader import fetch_training_data, validate_data_sufficiency
 
-def evaluate_combination(params, df, regressor_names, initial, period, horizon):
+def evaluate_combination(params, df, regressor_names, cv_params):
     """
     Evaluates a single combination of hyperparameters.
-    Must be a top-level function for pickling in multiprocessing.
     """
     try:
         m = Prophet(
-            yearly_seasonality=settings['model']['prophet'].get('yearly_seasonality', False),
+            growth='flat',
+            yearly_seasonality=settings['model']['prophet'].get('yearly_seasonality', True),
             daily_seasonality=True,
             weekly_seasonality=False,
             changepoint_prior_scale=params['changepoint_prior_scale'],
             seasonality_prior_scale=params['seasonality_prior_scale'],
-            seasonality_mode = params.get('seasonality_mode', 'multiplicative')
+            seasonality_mode=params.get('seasonality_mode', 'multiplicative')
         )
         for reg_name in regressor_names:
-            m.add_regressor(reg_name, mode=params.get('regressor_mode', 'multiplicative'), prior_scale=params['regressor_prior_scale'], standardize=False)
+            # We can customize prior scales per regressor if we want, 
+            # but for now we stick to the global setting.
+            # However, if we have Clear Sky, we might want it to be additive or multiplicative depending on physics.
+            # Usually PV = ALLSKY * Efficiency.
+            # But the user specifically wanted these features.
+            # "CLRSKY" is a base, "ALLSKY" is the actual driver.
+            # We let Prophet figure it out with the mode in settings.
+            
+            m.add_regressor(
+                reg_name, 
+                mode=params.get('regressor_mode', 'multiplicative'), 
+                prior_scale=params['regressor_prior_scale'], 
+                standardize=False
+            )
         
         m.fit(df)
         
-        # Disable parallel here to avoid nested parallelism issues
-        df_cv = cross_validation(m, initial=initial, period=period, horizon=horizon, disable_tqdm=True, parallel=None)
+        # Cross-validation
+        df_cv = cross_validation(
+            m, 
+            initial=cv_params['initial'], 
+            period=cv_params['period'], 
+            horizon=cv_params['horizon'], 
+            disable_tqdm=True, 
+            parallel=None
+        )
+        
         # Calculate metrics manually to apply consistent filtering
         y_true = df_cv['y']
-        y_pred = df_cv['yhat']
+        y_pred = df_cv['yhat'].clip(lower=0)
         
-        # Filter out low values (threshold configurable)
         threshold = settings['model'].get('tuning', {}).get('night_threshold', 50)
         valid_mask = y_true > threshold
         
         if valid_mask.sum() > 0:
-             mae = np.mean(np.abs(y_true[valid_mask] - y_pred[valid_mask]))
              rmse = np.sqrt(np.mean((y_true[valid_mask] - y_pred[valid_mask])**2))
              mape = np.mean(np.abs((y_true[valid_mask] - y_pred[valid_mask]) / y_true[valid_mask]))
+             # Combined score: RMSE + weighted MAPE (MAPE is 0.0-1.0, so we scale it)
+             # This formula is specifically chosen for PV forecasting:
+             # 1. RMSE (primary): Ensures total energy volume is correct (critical for battery charging).
+             # 2. MAPE (weighting): Penalizes "nervous" predictions in low-light conditions (morning/evening),
+             #    which improves self-consumption planning accuracy.
+             # Result is a balanced metric that values both peak power accuracy and curve shape.
+             # LOWER IS BETTER (0 = Perfect prediction)
+             score = rmse * (1 + mape)
         else:
-             mae = float('nan')
+             score = float('inf')
              rmse = float('nan')
              mape = float('nan')
         
-        result = params.copy()
-        result['rmse'] = rmse
-        result['mae'] = mae
-        result['mape'] = mape
-        return result
+        return score, rmse, mape
 
     except Exception as e:
-        # It's hard to print exception tracebacks from worker processes cleanly,
-        # so we return the error as a string or special result
         print(f"Failed for {params}: {e}")
         traceback.print_exc()
-        result = params.copy()
-        result['rmse'] = float('inf')
-        result['mae'] = float('inf')
-        result['mape'] = float('inf')
-        return result
+        return float('inf'), float('inf'), float('inf')
+
+def objective(trial, df, regressor_names, cv_params):
+    # Suggest parameters
+    params = {
+        'changepoint_prior_scale': trial.suggest_float('changepoint_prior_scale', 0.001, 0.5, log=True),
+        'seasonality_prior_scale': trial.suggest_float('seasonality_prior_scale', 0.001, 10.0, log=True),
+        'regressor_prior_scale': trial.suggest_float('regressor_prior_scale', 0.001, 10.0, log=True),
+        'regressor_mode': trial.suggest_categorical('regressor_mode', ['additive', 'multiplicative']),
+        'seasonality_mode': trial.suggest_categorical('seasonality_mode', ['additive', 'multiplicative']),
+    }
+    
+    score, rmse, mape = evaluate_combination(params, df, regressor_names, cv_params)
+    
+    # Store additional metrics in trial
+    trial.set_user_attr("rmse", rmse)
+    trial.set_user_attr("mape", mape)
+    
+    return score 
+
+def logging_callback(study, trial, n_trials, counter, lock):
+    with lock:
+        counter.value += 1
+        current_step = counter.value
+    
+    # Extract metrics and parameters for clearer display
+    score = trial.value
+    rmse = trial.user_attrs.get('rmse', float('nan'))
+    mape = trial.user_attrs.get('mape', float('nan'))
+    params = trial.params
+    
+    # Format parameters into a concise string
+    params_str = ", ".join([f"{k}: {v:.4f}" if isinstance(v, float) else f"{k}: {v}" for k, v in params.items()])
+    
+    print(f"[{current_step}/{n_trials}] "
+          f"Score: {score:.4f} (RMSE: {rmse:.4f}, MAPE: {mape:.4f}) - "
+          f"Params: {{{params_str}}}")
 
 def tune_hyperparameters():
-    df, regressor_names = fetch_and_prepare_data()
-    if df is None or df.empty:
+    result = fetch_training_data(verbose=True)
+    if result is None:
         print("Data fetching failed.")
         return
-
-    # Parameter grid
-    param_grid = {
-        'changepoint_prior_scale': settings['model']['tuning'].get('changepoint_prior_scale', [0.05]),
-        'seasonality_prior_scale': settings['model']['tuning'].get('seasonality_prior_scale', [10.0]),
-        'regressor_prior_scale': settings['model']['tuning'].get('regressor_prior_scale', [0.5]),
-        'regressor_mode': settings['model']['tuning'].get('regressor_mode', ['multiplicative']),
-        'seasonality_mode': settings['model']['tuning'].get('seasonality_mode', ['multiplicative']),
-    }
-
-    # Generate all combinations
-    all_params = [dict(zip(param_grid.keys(), v)) for v in itertools.product(*param_grid.values())]
     
-    process_count = settings['model']['tuning'].get('process_count', 4)
-    print(f"Starting tuning with {len(all_params)} combinations using {process_count} cores...")
+    df, regressor_names = result
     
-    # We need at least enough data for CV. 
+    # Validation
     total_days = (df['ds'].max() - df['ds'].min()).days
-    
     training_days = settings['model']['training_days']
-    if total_days < (training_days * 0.9):
-        print(f"Error: Insufficient historical data for tuning.")
-        print(f"  > Requested: {training_days} days")
-        print(f"  > Available: {total_days} days")
-        print("  > Please ensure buckets contain enough history or reduce 'training_days' in settings.toml")
+    if not validate_data_sufficiency(df, training_days):
         return
 
-    # Optimization for short-term forecast (1 day)
+    # CV Parameters
     target_horizon = '1 days'
-
     if total_days > 720:
-        # > 2 Years: Train on ~2 years, test every 2 weeks
-        initial = '700 days'
-        period = '14 days'
-        horizon = target_horizon
+        initial, period, horizon = '700 days', '14 days', target_horizon
     elif total_days > 400:
-        # > 1 Year: Train on ~1 year, test weekly
-        initial = '370 days'
-        period = '7 days'
-        horizon = target_horizon
+        initial, period, horizon = '370 days', '7 days', target_horizon
     else:
-        # Fallback for smaller datasets
         initial = f'{max(5, int(total_days * 0.6))} days'
         period = f'{max(2, int(total_days * 0.1))} days'
         horizon = target_horizon
     
-    print(f"CV Params: initial={initial}, period={period}, horizon={horizon}")
+    cv_params = {'initial': initial, 'period': period, 'horizon': horizon}
+    print(f"CV Settings: {cv_params}")
 
-    results = []
+    # Optuna Study
+    n_trials = settings['model']['tuning'].get('trials', 30)
+    process_count = settings['model']['tuning'].get('process_count', 4)
     
-    # ProcessPoolExecutor for parallel execution
-    # max_workers=process_count as requested
-    with concurrent.futures.ProcessPoolExecutor(max_workers=process_count) as executor:
-        # Submit all tasks
-        future_to_params = {
-            executor.submit(
-                evaluate_combination, 
-                params, 
-                df, 
-                regressor_names, 
-                initial, 
-                period, 
-                horizon
-            ): params for params in all_params
-        }
-        
-        total_tasks = len(future_to_params)
-        for i, future in enumerate(concurrent.futures.as_completed(future_to_params), 1):
-            params = future_to_params[future]
-            try:
-                # Add a timeout of 180 seconds (3 minutes) per model
-                result = future.result(timeout=180)
-                results.append(result)
-                print(f"[{i}/{total_tasks}] ({i/total_tasks:.1%}) Finished {params} -> RMSE: {result['rmse']:.4f}, MAE: {result['mae']:.4f}, MAPE: {result['mape']:.4f}", flush=True)
-            except concurrent.futures.TimeoutError:
-                print(f"[{i}/{total_tasks}] ({i/total_tasks:.1%}) TIMED OUT {params} (skipping)", flush=True)
-            except Exception as exc:
-                print(f'{params} generated an exception: {exc}')
+    print(f"Starting Optuna optimization with {n_trials} trials on {process_count} parallel cores...")
+    
+    # Shared counter for parallel progress tracking
+    counter = multiprocessing.Value('i', 0)
+    lock = multiprocessing.Lock()
 
-    # DataFrame of results
-    results_df = pd.DataFrame(results)
-    results_df.sort_values(by='rmse', inplace=True)
+    # We use functools.partial instead of lambda for better pickling support on Windows
+    # when using n_jobs > 1.
+    objective_with_args = partial(objective, df=df, regressor_names=regressor_names, cv_params=cv_params)
+    callback = partial(logging_callback, n_trials=n_trials, counter=counter, lock=lock)
+    
+    study = optuna.create_study(
+        direction='minimize',
+        sampler=optuna.samplers.TPESampler(multivariate=True)
+    )
+    study.optimize(
+        objective_with_args, 
+        n_trials=n_trials,
+        n_jobs=process_count,
+        callbacks=[callback]
+    )
 
     print("\n----------------------------------------------------------------")
-    print("TUNING RESULTS")
+    print("TOP 10 TRIALS")
     print("----------------------------------------------------------------")
-    print(results_df.to_string(index=False))
+    # Sort trials by value and get top 10 finished ones
+    finished_trials = [t for t in study.trials if t.state == optuna.trial.TrialState.COMPLETE]
+    top_trials = sorted(finished_trials, key=lambda t: t.value)[:10]
+    
+    for i, t in enumerate(top_trials):
+        rmse_val = t.user_attrs.get('rmse', float('nan'))
+        mape_val = t.user_attrs.get('mape', float('nan'))
+        params_str = ", ".join([f"{k}: {v:.4f}" if isinstance(v, float) else f"{k}: {v}" for k, v in t.params.items()])
+        print(f"#{i+1:2}: Trial {t.number:2} - Score: {t.value:.4f} (RMSE: {rmse_val:.4f}, MAPE: {mape_val:.4f}) - Params: {{{params_str}}}")
+    
     print("----------------------------------------------------------------")
-
-    if not results_df.empty:
-        best_params = results_df.iloc[0]
-        best_rmse = best_params['rmse']
-        
-        print(f"BEST PARAMETERS (RMSE: {best_rmse:.4f})")
-        print("----------------------------------------------------------------")
-        print(f"changepoint_prior_scale = {best_params['changepoint_prior_scale']}")
-        print(f"seasonality_prior_scale = {best_params['seasonality_prior_scale']}")
-        print(f"regressor_prior_scale = {best_params['regressor_prior_scale']}")
-        print(f"regressor_mode = \"{best_params.get('regressor_mode', 'multiplicative')}\"")
-        print(f"seasonality_mode = \"{best_params.get('seasonality_mode', 'multiplicative')}\"")
-        print("----------------------------------------------------------------")
-        print("Update these values in your settings.toml [prophet] section!")
+    print(f"BEST PARAMETERS (Trial {study.best_trial.number})")
+    print("----------------------------------------------------------------")
+    for key, value in study.best_params.items():
+        if isinstance(value, float):
+            print(f"{key} = {value:.6f}")
+        else:
+            print(f"{key} = \"{value}\"")
+    print("----------------------------------------------------------------")
+    print("Update these values in your settings.toml [model.prophet] section!")
 
 if __name__ == "__main__":
     tune_hyperparameters()
+

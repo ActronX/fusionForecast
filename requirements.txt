@@ -7,3 +7,5 @@ plotly>=5.0
 openmeteo-requests
 requests-cache
 retry-requests
+optuna
+

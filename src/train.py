@@ -27,26 +27,30 @@ def train_model():
 
     # 3. Configure and Train Model
     print("Configuring Prophet model...")
-    yearly_seasonality = settings['model']['prophet'].get('yearly_seasonality', False)
-    changepoint_prior = settings['model']['prophet'].get('changepoint_prior_scale', 0.05)
-    seasonality_prior = settings['model']['prophet'].get('seasonality_prior_scale', 10.0)
-    seasonality_mode = settings['model']['prophet'].get('seasonality_mode', 'multiplicative')
-    regressor_mode = settings['model']['prophet'].get('regressor_mode', 'multiplicative')
-
+    p_settings = settings['model']['prophet']
+    
     model = Prophet(
-        yearly_seasonality=yearly_seasonality,
+        growth='flat',
+        yearly_seasonality=p_settings.get('yearly_seasonality', True),
         daily_seasonality=True,
         weekly_seasonality=False,
-        changepoint_prior_scale=changepoint_prior,
-        seasonality_prior_scale=seasonality_prior, 
-        seasonality_mode = seasonality_mode
+        changepoint_prior_scale=p_settings.get('changepoint_prior_scale', 0.05),
+        seasonality_prior_scale=p_settings.get('seasonality_prior_scale', 10.0), 
+        seasonality_mode=p_settings.get('seasonality_mode', 'multiplicative')
     )
     
     # Add Regressors
-    prior_scale = settings['model']['prophet']['regressor_prior_scale']
+    reg_mode = p_settings.get('regressor_mode', 'multiplicative')
+    reg_prior = p_settings.get('regressor_prior_scale', 10.0)
+    
     for reg_name in regressor_names:
-        print(f"Adding regressor: {reg_name}")
-        model.add_regressor(reg_name, mode=regressor_mode, prior_scale=prior_scale, standardize=False)
+        print(f"Adding regressor: {reg_name} (mode={reg_mode}, prior={reg_prior})")
+        model.add_regressor(
+            reg_name, 
+            mode=reg_mode, 
+            prior_scale=reg_prior, 
+            standardize=False
+        )
     
     print("Fitting model...")
     model.fit(df_prophet)
