@@ -17,69 +17,8 @@ logging.getLogger('cmdstanpy').disabled = True
 logging.getLogger('cmdstanpy').propagate = False
 logging.getLogger('cmdstanpy').setLevel(logging.CRITICAL)
 
-from src.db import InfluxDBWrapper
 from src.config import settings
-from src.preprocess import preprocess_data, prepare_prophet_dataframe
-
-def fetch_and_prepare_data():
-    """Duplicates logic from train.py to get the training dataframe"""
-    print("Fetching training data...")
-    db = InfluxDBWrapper()
-    training_days = settings['model']['training_days']
-    range_start = f"-{training_days}d"
-
-    # 1. Produced
-    produced_scale = settings['model']['preprocessing'].get('produced_scale', 1.0)
-    produced_offset = settings['model']['preprocessing'].get('produced_offset', '0m')
-    query_produced = f'''
-    from(bucket: "{settings['influxdb']['buckets']['history_produced']}")
-      |> range(start: {range_start})
-      |> filter(fn: (r) => r["_measurement"] == "{settings['influxdb']['measurements']['produced']}")
-      |> filter(fn: (r) => r["_field"] == "{settings['influxdb']['fields']['produced']}")
-      |> map(fn: (r) => ({{ r with _value: r._value * {produced_scale} }}))
-      |> timeShift(duration: {produced_offset})
-      |> pivot(rowKey:["_time"], columnKey: ["_field"], valueColumn: "_value")
-    '''
-    df_produced = db.query_dataframe(query_produced)
-    if df_produced.empty: return None
-
-    df_prophet = preprocess_data(df_produced, value_column=settings['influxdb']['fields']['produced'], is_prophet_input=True)
-    df_prophet = prepare_prophet_dataframe(df_prophet, freq='30min')
-
-    # 2. Regressor
-    regressor_offset = settings['model']['preprocessing'].get('regressor_offset', '0m')
-    regressor_scale = settings['model']['preprocessing'].get('regressor_scale', 1.0)
-    
-    regressor_fields = [settings['influxdb']['fields']['regressor_history']]
-    
-    # Filter for all requested regressor fields
-    regressor_filter = " or ".join([f'r["_field"] == "{f}"' for f in regressor_fields])
-    
-    query_regressor = f'''
-    from(bucket: "{settings['influxdb']['buckets']['regressor_history']}")
-      |> range(start: {range_start})
-      |> filter(fn: (r) => r["_measurement"] == "{settings['influxdb']['measurements']['regressor_history']}")
-      |> filter(fn: (r) => {regressor_filter})
-      |> map(fn: (r) => ({{ r with _value: r._value * {regressor_scale} }}))
-      |> timeShift(duration: {regressor_offset})
-      |> pivot(rowKey:["_time"], columnKey: ["_field"], valueColumn: "_value")
-    '''
-    df_regressor = db.query_dataframe(query_regressor)
-    if df_regressor.empty: return None
-
-    df_regressor = prepare_prophet_dataframe(df_regressor, freq='30min')
-    
-    regressor_names = []
-    for field in regressor_fields:
-        reg_name = field
-        df_regressor[reg_name] = df_regressor[reg_name].interpolate(method='linear', limit_direction='both')
-        regressor_names.append(reg_name)
-
-    # Merge
-    df_prophet = pd.merge(df_prophet, df_regressor[['ds'] + regressor_names], on='ds', how='inner')
-    df_prophet.dropna(inplace=True)
-    
-    return df_prophet, regressor_names
+from src.data_loader import fetch_training_data, validate_data_sufficiency
 
 def evaluate_combination(params, df, regressor_names, initial, period, horizon):
     """
@@ -168,22 +107,24 @@ def tune_hyperparameters():
         print("  > Please ensure buckets contain enough history or reduce 'training_days' in settings.toml")
         return
 
-    # Optimization for short-term forecast (2 days)
+    # Optimization for short-term forecast (1 day)
+    target_horizon = '1 days'
+
     if total_days > 720:
         # > 2 Years: Train on ~2 years, test every 2 weeks
         initial = '700 days'
         period = '14 days'
-        horizon = '2 days'
+        horizon = target_horizon
     elif total_days > 400:
         # > 1 Year: Train on ~1 year, test weekly
         initial = '370 days'
         period = '7 days'
-        horizon = '2 days'
+        horizon = target_horizon
     else:
         # Fallback for smaller datasets
         initial = f'{max(5, int(total_days * 0.6))} days'
         period = f'{max(2, int(total_days * 0.1))} days'
-        horizon = '2 days'
+        horizon = target_horizon
     
     print(f"CV Params: initial={initial}, period={period}, horizon={horizon}")
 
