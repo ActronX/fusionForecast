@@ -105,7 +105,7 @@ def evaluate_combination(params, df, regressor_names, initial, period, horizon):
             seasonality_mode = params.get('seasonality_mode', 'multiplicative')
         )
         for reg_name in regressor_names:
-            m.add_regressor(reg_name, mode=params.get('regressor_mode', 'multiplicative'), prior_scale=params['regressor_prior_scale'])
+            m.add_regressor(reg_name, mode=params.get('regressor_mode', 'multiplicative'), prior_scale=params['regressor_prior_scale'], standardize=False)
         
         m.fit(df)
         
@@ -177,9 +177,22 @@ def tune_hyperparameters():
         print("  > Please ensure buckets contain enough history or reduce 'training_days' in settings.toml")
         return
 
-    initial = f'{max(5, int(total_days * 0.6))} days'
-    period = f'{max(2, int(total_days * 0.2))} days'
-    horizon = f'{max(1, int(total_days * 0.2))} days'
+    # Optimization for short-term forecast (2 days)
+    if total_days > 720:
+        # > 2 Years: Train on ~2 years, test every 2 weeks
+        initial = '700 days'
+        period = '14 days'
+        horizon = '2 days'
+    elif total_days > 400:
+        # > 1 Year: Train on ~1 year, test weekly
+        initial = '370 days'
+        period = '7 days'
+        horizon = '2 days'
+    else:
+        # Fallback for smaller datasets
+        initial = f'{max(5, int(total_days * 0.6))} days'
+        period = f'{max(2, int(total_days * 0.1))} days'
+        horizon = '2 days'
     
     print(f"CV Params: initial={initial}, period={period}, horizon={horizon}")
 

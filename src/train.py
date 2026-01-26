@@ -148,7 +148,7 @@ def train_model():
     prior_scale = settings['model']['prophet']['regressor_prior_scale']
     for reg_name in regressor_names:
         print(f"Adding regressor: {reg_name}")
-        model.add_regressor(reg_name, mode=regressor_mode, prior_scale=prior_scale)
+        model.add_regressor(reg_name, mode=regressor_mode, prior_scale=prior_scale, standardize=False)
     
     print("Fitting model...")
     model.fit(df_prophet)
