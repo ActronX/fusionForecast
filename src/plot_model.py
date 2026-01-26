@@ -23,7 +23,7 @@ def plot_model():
 
     # 2. Setup Future Dataframe 
     # We want to see how it fits history + forecast
-    future = model.make_future_dataframe(periods=48, freq='30min') # 24 hours of 30min chunks approx
+    future = model.make_future_dataframe(periods=144, freq='30min') # 3 days of 30min chunks
 
     # 3. Handle Regressors
     if model.extra_regressors:
@@ -54,7 +54,7 @@ def plot_model():
         print("Fetching regressor forecast...")
         query_fcst = f'''
         from(bucket: "{settings['influxdb']['buckets']['regressor_future']}")
-          |> range(start: -1h, stop: 48h) 
+          |> range(start: -1h, stop: 80h) 
           |> filter(fn: (r) => r["_measurement"] == "{settings['influxdb']['measurements']['regressor_future']}")
           |> filter(fn: (r) => {regressor_filter})
           |> map(fn: (r) => ({{ r with _value: r._value * {regressor_scale} }}))
@@ -98,14 +98,14 @@ def plot_model():
     # 4. Plot
     print("Creating improved interactive plots...")
     
-    # Define zoom range: Last 14 days + Future
+    # Define zoom range: Last 30 days + Future
     last_date = forecast['ds'].max()
-    start_zoom = last_date - pd.Timedelta(days=14)
+    start_zoom = last_date - pd.Timedelta(days=30)
     
     # --- Plot 1: Main Overview (Zoomed) ---
     fig1 = plot_plotly(model, forecast)
     fig1.update_layout(
-        title="Forecast Overview (Zoomed: Last 14 Days)",
+        title="Forecast Overview (Zoomed: Last 30 Days)",
         xaxis_range=[start_zoom, last_date],
         xaxis_title="Date",
         yaxis_title="Energy Production",

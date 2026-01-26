@@ -40,15 +40,6 @@ live     = "production"              # Real-time power for nowcasting | refs: bu
 # Weather/Regressor fields (Source: buckets.regressor_history/future | measurements.regressor_history/future)
 regressor_history    = "irradiance"           # Historic total irradiance (training) | refs: buckets.regressor_history & measurements.regressor_history
 regressor_future     = "irradiance"           # Forecast total irradiance (prediction) | refs: buckets.regressor_future & measurements.regressor_future
-diffuse              = "diffuse_radiation"    # (Required for pvlib) Diffuse radiation component | refs: buckets.regressor_history/future & measurements.regressor_history/future
-direct               = "direct_normal_irradiance" # (Required for pvlib) Direct radiation component | refs: buckets.regressor_history/future & measurements.regressor_history/future
-poa_perez            = "global_tilted_perez"  # (Required for pvlib) Calculated Perez POA irradiance | refs: buckets.regressor_history/future & measurements.regressor_history/future
-effective_irradiance = "effective_irradiance" # (Required for pvlib) Irradiance after reflection losses (IAM) | refs: buckets.regressor_history/future & measurements.regressor_history/future
-
-# Environmental sensors (Source: buckets.regressor_history/future | measurements.regressor_history/future)
-temp_amb   = "temperature_2m"   # (Required for pvlib) Ambient air temperature | refs: buckets.regressor_history/future & measurements.regressor_history/future
-wind_speed = "wind_speed_10m"   # (Required for pvlib) Wind speed at 10m height | refs: buckets.regressor_history/future & measurements.regressor_history/future
-temp_cell  = "temperature_cell" # (Required for pvlib) Calculated solar cell temperature (SAPM) | refs: buckets.regressor_history/future & measurements.regressor_history/future
 
 [weather.open_meteo.historic]
 # Historic Data Fetch Settings
@@ -82,20 +73,12 @@ forecast_offset = "0m"   # Shift output timestamps
 
 [model.prophet]
 # Prophet specific forecasting settings
-use_pvlib = false                # Enable physical solar models (Perez/IAM)
 yearly_seasonality = false        # Enable annual cycles
 seasonality_mode = "additive"    # Saisonal effect type
 regressor_mode = "additive"      # Weather effect type
 changepoint_prior_scale = 0.001 # Trend flexibility
 seasonality_prior_scale = 1.0   # Seasonality influence strength
 regressor_prior_scale = 5.0     # Weather data influence strength
-
-[model.pvlib]
-# Parameters for Effective Irradiance and SAPM Cell Temperature models
-iam_b = 0.05       # Incidence angle modifier coefficient
-sapm_a = -2.98     # Cell temperature model coefficient A
-sapm_b = -0.0471   # Cell temperature model coefficient B
-sapm_deltaT = 1    # Cell temperature model temperature delta
 
 [model.tuning]
 # Hyperparameter optimization settings for tune.py
@@ -111,5 +94,5 @@ seasonality_mode = ["additive", "multiplicative"] # Test modes for seasonality
 [nowcast]
 # Real-time adjustment (damping factor) settings
 use_damping_factor = true  # Enable real-time correction based on actuals
-min_damping_factor = 0.5  # Minimum allowed adjustment factor
+min_damping_factor = 0.3  # Minimum allowed adjustment factor
 max_damping_factor = 1.5   # Maximum allowed adjustment factor

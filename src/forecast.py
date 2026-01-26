@@ -35,16 +35,7 @@ def run_forecast():
     regressor_offset = settings['model']['preprocessing'].get('regressor_offset', '0m')
     regressor_scale = settings['model']['preprocessing'].get('regressor_scale', 1.0)
     
-    # Check if we should use Perez POA / Effective
-    use_pvlib = settings['model'].get('prophet', {}).get('use_pvlib', False)
-    
-    if use_pvlib:
-        regressor_fields = [
-            settings['influxdb']['fields'].get('effective_irradiance', 'effective_irradiance'),
-            settings['influxdb']['fields'].get('temp_cell', 'temperature_cell')
-        ]
-    else:
-        regressor_fields = [settings['influxdb']['fields']['regressor_future']]
+    regressor_fields = [settings['influxdb']['fields']['regressor_future']]
     
     print(f"Using regressor fields: {regressor_fields}")
     

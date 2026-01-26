@@ -54,11 +54,7 @@ Individual field names within the measurements. **Every field is cross-reference
 - `produced`: The field name for actual power/energy (e.g., `generatedWh`).
 - `forecast`: The target field for prediction output.
 - `regressor_history` / `regressor_future`: The primary irradiance field (GHI).
-- **Physical Model Fields** (Required if `use_pvlib = true`):
-    - `diffuse` / `direct`: IR components for Perez POA.
-    - `poa_perez`: Resulting raw plane-of-array irradiance.
-    - `effective_irradiance`: Irradiance after IAM reflection losses.
-    - `temp_amb` / `wind_speed` / `temp_cell`: Ambient and calculated cell temperatures.
+
 
 #### 5. Weather Source `[weather.open_meteo]`
 Configures how weather data is fetched from the Open-Meteo API.
@@ -79,22 +75,18 @@ Fine-tuning of data before it entering the ML model.
 
 #### 8. Prophet ML Engine `[model.prophet]`
 Specific settings for the Facebook Prophet model.
-- `use_pvlib`: **The Physics Toggle.** Enables physical solar modelling.
-    - While Prophet learns seasonally, enabling `use_pvlib` allows the model to "understand" the physical geometry of your panels, potentially leading to better accuracy in complex weather.
+
 - `changepoint_prior_scale`: Controls trend flexibility. Lower = smoother, Higher = more reactive to changes.
 - `seasonality_prior_scale`: Intensity of yearly/daily cycles.
 - `regressor_prior_scale`: How much the model trusts the weather forecast vs. its internal patterns.
 
-#### 9. Physical Model coefficients `[model.pvlib]`
-Parameters for `pvlib` when `use_pvlib` is active.
-- `iam_b`: Incidence Angle Modifier coefficient (typical value 0.05).
-- `sapm_a` / `sapm_b` / `sapm_deltaT`: Sandia Array Performance Model coefficients for cell temperature.
 
-#### 10. Hyperparameter Tuning `[model.tuning]`
+
+#### 9. Hyperparameter Tuning `[model.tuning]`
 - `process_count`: Parallel CPU cores for grid search.
 - `night_threshold`: Power level (Watts) below which data is ignored during evaluation to prevent "easy night wins" from skewing metrics.
 
-#### 11. Nowcast Settings `[nowcast]`
+#### 10. Nowcast Settings `[nowcast]`
 Real-time damping factor correction.
 - `use_damping_factor`: Toggle the live correction.
 - `min_damping_factor` / `max_damping_factor`: Safety limits to prevent extreme forecast scaling based on temporary anomalies.
