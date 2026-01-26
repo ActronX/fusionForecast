@@ -83,7 +83,8 @@ Specific settings for the Facebook Prophet model.
 
 
 #### 9. Hyperparameter Tuning `[model.tuning]`
-- `process_count`: Parallel CPU cores for grid search.
+- `trials`: Number of optimization trials (default: 100).
+- `process_count`: Parallel CPU cores for Optuna optimization.
 - `night_threshold`: Power level (Watts) below which data is ignored during evaluation to prevent "easy night wins" from skewing metrics.
 
 #### 10. Nowcast Settings `[nowcast]`
@@ -178,7 +179,7 @@ Executes the complete workflow in order:
 
 ### 8. Hyperparameter Tuning
 
-To optimize the model's accuracy, you can tune the hyperparameters (e.g., `changepoint_prior_scale`, `seasonality_mode`) using a grid search. The parameters to be tested are defined in `settings.toml` under `[prophet.tuning]`.
+To optimize the model's accuracy, you can tune the hyperparameters (e.g., `changepoint_prior_scale`, `seasonality_mode`) using **Optuna** (Bayesian Optimization). The settings (trials, cpu cores) are defined in `settings.toml` under `[model.tuning]`.
 
 **Start:**
 - Windows: `tune.bat` or `python -m src.tune`
