@@ -10,7 +10,7 @@ FusionForecast is an ML-based tool for forecasting time series data (e.g., PV ge
 - **Modeling**: Uses Facebook Prophet for time series forecasting.
 - **Server-Side Aggregation**: Performs downsampling (e.g., to 1h means) directly in the database.
 - **Configurable**: All settings (buckets, measurements, offsets) are defined in `settings.toml`.
-- **Advanced Irradiance Modeling (Optional)**: Support for Perez POA, IAM losses, and SAPM cell temperature modeling via `pvlib`.
+
 - **Offset Support**: Supports time offsets for regressors (e.g., to adjust time zones or lead times).
 
 ## Prerequisites
@@ -221,8 +221,8 @@ The container automatically:
 👉 **[Read the InfluxDB Documentation](influxdb-login-guide.md)**
 ![influx](influx.jpg)
 
-## Manual Installation (Alternative)
-👉 **[Read the Manual Installation Documentation](manual_installation.md)**
+## Manual Installation
+For manual installation details, please refer to [manual_installation.md](manual_installation.md).
 
 # Smart Consumer Control (Node-RED)
 
