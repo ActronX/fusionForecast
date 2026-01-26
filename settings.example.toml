@@ -81,15 +81,12 @@ seasonality_prior_scale = 1.0   # Seasonality influence strength
 regressor_prior_scale = 5.0     # Weather data influence strength
 
 [model.tuning]
-# Hyperparameter optimization settings for tune.py
-process_count = 6      # Number of parallel CPU cores
-night_threshold = 50   # Ignore values <= this during evaluation (Watts)
-# Grid search ranges
-changepoint_prior_scale = [0.001, 0.01, 0.1]  # Test range for trend
-seasonality_prior_scale = [0.1, 1.0, 10.0]    # Test range for seasonality
-regressor_prior_scale = [0.1, 0.5, 1.0, 3.0, 5.0] # Test range for weather
-regressor_mode = ["additive", "multiplicative"]   # Test modes for regressors
-seasonality_mode = ["additive", "multiplicative"] # Test modes for seasonality
+# Hyperparameter optimization settings (now uses Optuna)
+trials = 100             # Number of intelligent search trials
+process_count = 4       # Number of parallel CPU cores
+night_threshold = 50    # Ignore values <= this during evaluation (Watts)
+# Note: Optuna now searches ranges automatically. 
+# You no longer need to define static grids here.
 
 [nowcast]
 # Real-time adjustment (damping factor) settings
