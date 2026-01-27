@@ -61,7 +61,7 @@ def fetch_training_data(verbose: bool = True):
 
     # Preprocess Produced
     df_prophet = preprocess_data(df_produced, value_column=settings['influxdb']['fields']['produced'], is_prophet_input=True)
-    df_prophet = prepare_prophet_dataframe(df_prophet, freq='30min')
+    df_prophet = prepare_prophet_dataframe(df_prophet, freq='15min')
 
     # 2. Fetch Regressor Data (History)
     if verbose:
@@ -97,7 +97,7 @@ def fetch_training_data(verbose: bool = True):
         return None
 
     # Preprocess Regressor
-    df_regressor = prepare_prophet_dataframe(df_regressor, freq='30min')
+    df_regressor = prepare_prophet_dataframe(df_regressor, freq='15min')
     
     # Interpolate regressor fields
     regressor_names = []

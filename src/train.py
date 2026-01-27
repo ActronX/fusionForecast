@@ -2,6 +2,7 @@
 print("DEBUG: Application starting...")
 import os
 import sys
+import pandas as pd
 print("DEBUG: Basic imports done")
 import pickle
 import logging
@@ -63,12 +64,16 @@ def train_model():
         weekly_seasonality=p_settings.get('weekly_seasonality', False), 
         daily_seasonality=p_settings.get('daily_seasonality', True),
         seasonality_mode=p_settings.get('seasonality_mode', 'additive'),
-        learning_rate=p_settings.get('learning_rate', 0.01),
+        learning_rate=p_settings.get('learning_rate', 1e-4),
         epochs=p_settings.get('epochs', 10),
+        batch_size=p_settings.get('batch_size', 128),
+        # Regularization - This is why reg_loss was 0!
+        trend_reg=p_settings.get('trend_reg', 0.0),
+        seasonality_reg=p_settings.get('seasonality_reg', 0.0),
+        ar_reg=p_settings.get('ar_reg', 0.0),
         # Network Architecture
         n_lags=p_settings.get('n_lags', 0),
         ar_layers=p_settings.get('ar_layers', []),
-        # Regularization
         accelerator=p_settings.get('accelerator', 'auto'),
         drop_missing=True
     )
@@ -89,16 +94,26 @@ def train_model():
         print(f"Adding future regressor: {reg_name} (mode={reg_mode}, reg={reg_reg})")
         model.add_future_regressor(
             name=reg_name,
-            mode=reg_mode
-            # regularization=reg_reg # Uncomment if supported by exact version, usually handled via list or global? 
-            # NP allows regularization on regressors?
-            # It seems 'normalize' is an option. 
-            # For now, simplistic add.
+            mode=reg_mode,
+            regularization=reg_reg
         )
     
+    print(f"Training data summary before processing:\n{df_prophet.describe()}")
+    
+    # NeuralProphet struggles with large gaps in history (NaNs).
+    # Since this is PV power, missing values are often nightly outages or system downtime.
+    # We'll ensure the index is continuous and fill gaps with 0 or interpolate carefully.
+    df_prophet['ds'] = pd.to_datetime(df_prophet['ds'])
+    df_prophet = df_prophet.set_index('ds').resample('15min').mean()
+    df_prophet = df_prophet.fillna(0) # Fill gaps with 0 for PV stability
+    df_prophet = df_prophet.reset_index()
+    
+    print(f"Training data shape after gap-filling: {df_prophet.shape}")
+    print(f"Training data summary after gap-filling:\n{df_prophet.describe()}")
+
     print("Fitting model...")
     # metrics=True allows tracking loss
-    model.fit(df_prophet, freq='30min')
+    model.fit(df_prophet, freq='15min')
     
     # 4. Save Model
     model_path = settings['model']['path']

@@ -181,9 +181,18 @@ def run_forecast():
             print("Warning: Could not fetch sufficient history for AR. Forecasting might be degraded.")
 
     print(f"Forecasting for {len(df_input)} points (History + Future)...")
+    print(f"DEBUG: df_input size: {len(df_input)}")
+    print(f"DEBUG: Duplicates in ds: {df_input['ds'].duplicated().sum()}")
+    print(f"DEBUG: NAs in y history: {df_input.iloc[:len(df_history_final)]['y'].isna().sum()}")
     
     # Predict
-    forecast = model.predict(df_input)
+    try:
+        forecast = model.predict(df_input)
+    except Exception as e:
+        print(f"DEBUG: Predict failed: {e}")
+        import traceback
+        traceback.print_exc()
+        raise e
     
     # Rename yhat1 to yhat
     if 'yhat1' in forecast.columns and 'yhat' not in forecast.columns:
