@@ -1,36 +1,17 @@
-
-print("DEBUG: Application starting...")
 import os
 import sys
 import pandas as pd
-print("DEBUG: Basic imports done")
-import pickle
-import logging
-import sys
-sys.path.append(os.getcwd())
-print("DEBUG: Standard lib imports done")
-
-# logging.getLogger('cmdstanpy').disabled = True # Not needed for NeuralProphet
-# Check if we need to suppress PyTorch Lightning logs
-#logging.getLogger("pytorch_lightning").setLevel(logging.INFO)
-#logging.getLogger("NP").setLevel(logging.INFO)
 import warnings
-#warnings.filterwarnings("ignore", ".*Trying to infer the `batch_size`.*")
-#warnings.filterwarnings("ignore", ".*DataFrameGroupBy.apply operated on the grouping columns.*")
-#warnings.filterwarnings("ignore", ".*Series.view is deprecated.*")
-#warnings.filterwarnings("ignore", ".*is deprecated, use `isinstance.*")
-#warnings.filterwarnings("ignore", ".*Defined frequency .* is different than major frequency.*")
-#warnings.filterwarnings("ignore", ".*You called .*but have no logger configured.*")
 
+sys.path.append(os.getcwd())
 
-print("DEBUG: Importing NeuralProphet...")
+# Suppress common warnings for cleaner output
+warnings.filterwarnings("ignore", category=DeprecationWarning)
+
 import neuralprophet
 from neuralprophet import NeuralProphet
-print("DEBUG: NeuralProphet imported")
-print("DEBUG: Importing local modules...")
 from src.config import settings
 from src.data_loader import fetch_training_data, validate_data_sufficiency
-print("DEBUG: Local modules imported")
 
 
 def train_model():
@@ -47,17 +28,11 @@ def train_model():
     training_days = settings['model']['training_days']
     if not validate_data_sufficiency(df_prophet, training_days):
         sys.exit(1)
-    # Validate data sufficiency
-    training_days = settings['model']['training_days']
-    if not validate_data_sufficiency(df_prophet, training_days):
-        sys.exit(1)
 
     print("Configuring NeuralProphet model...")
     p_settings = settings['model']['neuralprophet']
     
-    # NeuralProphet initialization
-    # Note: 'growth'='flat' constraint from Prophet is not directly mapped. 
-    # Using 'linear' effectively allows trend.
+    # Initialize NeuralProphet model with configured parameters
     model = NeuralProphet(
         growth=p_settings.get('growth', 'linear'),
         yearly_seasonality=p_settings.get('yearly_seasonality', False),
@@ -67,11 +42,11 @@ def train_model():
         learning_rate=p_settings.get('learning_rate', 1e-4),
         epochs=p_settings.get('epochs', 10),
         batch_size=p_settings.get('batch_size', 128),
-        # Regularization - This is why reg_loss was 0!
+        # Regularization parameters
         trend_reg=p_settings.get('trend_reg', 0.0),
         seasonality_reg=p_settings.get('seasonality_reg', 0.0),
         ar_reg=p_settings.get('ar_reg', 0.0),
-        # Network Architecture
+        # AutoRegressive architecture
         n_lags=p_settings.get('n_lags', 0),
         n_forecasts=p_settings.get('n_forecasts', 1),
         ar_layers=p_settings.get('ar_layers', []),
@@ -79,16 +54,8 @@ def train_model():
         drop_missing=True
     )
     
-    # Add Regressors
-    # In NeuralProphet, external variables for forecast are 'future_regressors'
-    # Default mode can be additive or multiplicative
-    # There is no global 'regressor_mode' param in init, it's per regressor usually?
-    # No, add_future_regressor has 'mode'.
-    # We will assume 'additive' unless specified (Prophet config had 'regressor_mode', let's use it if valid)
-    # But we mapped it out. We will stick to the 'seasonality_mode' for simplicity or default 'additive'.
-    # Actually, previous code used p_settings.get('regressor_mode', 'multiplicative').
-    # Let's try to grab that if it exists, otherwise default.
-    reg_mode = p_settings.get('regressor_mode', 'additive') # Default to additive for NP stability
+    # Add future regressors (weather data)
+    reg_mode = p_settings.get('regressor_mode', 'additive')
     reg_reg = p_settings.get('future_regressor_regularization', 0.0)
 
     for reg_name in regressor_names:
@@ -101,58 +68,27 @@ def train_model():
     
     print(f"Training data summary before processing:\n{df_prophet.describe()}")
     
-    # NeuralProphet struggles with large gaps in history (NaNs).
-    # Since this is PV power, missing values are often nightly outages or system downtime.
-    # We'll ensure the index is continuous and fill gaps with 0 or interpolate carefully.
+    # Ensure continuous time index and fill gaps with 0 (PV systems produce 0 at night)
     df_prophet['ds'] = pd.to_datetime(df_prophet['ds'])
     df_prophet = df_prophet.set_index('ds').resample('15min').mean()
-    df_prophet = df_prophet.fillna(0) # Fill gaps with 0 for PV stability
+    df_prophet = df_prophet.fillna(0)
     df_prophet = df_prophet.reset_index()
     
     print(f"Training data shape after gap-filling: {df_prophet.shape}")
     print(f"Training data summary after gap-filling:\n{df_prophet.describe()}")
 
     print("Fitting model...")
-    # metrics=True allows tracking loss
     model.fit(df_prophet, freq='15min')
     
-    # 4. Save Model
+    # Save trained model
     model_path = settings['model']['path']
-    # Ensure directory exists
     os.makedirs(os.path.dirname(model_path), exist_ok=True)
     
     print(f"Saving model to {model_path}...")
-    # NeuralProphet models can often be pickled, but sometimes recommended to use save().
-    # We'll try pickle for detailed state preservation.
-    
-    # Calculate and print model size before saving
-    # model_size = len(pickle.dumps(model))
-    # print(f"Model size before reduction: {model_size / 1024 / 1024:.2f} MB")
-
-    # --- Reduce Model Size ---
-    def strip_model(m):
-        """
-        Carefully remove detailed training state to reduce file size for inference.
-        """
-        # 1. Remove Optimizer State (safest, biggest gain usually)
-        if hasattr(m, 'trainer'):
-             print("DEBUG: Keeping trainer object (minimal mode used)")
-             # del m.trainer
-             pass
-             
-    strip_model(model)
-    
-    # Use NeuralProphet built-in save which is safer/smaller than raw pickle often
     neuralprophet.save(model, model_path)
     
-    # Check file size
     size_mb = os.path.getsize(model_path) / 1024 / 1024
-    print(f"Model saved to {model_path}")
-    print(f"Model file size: {size_mb:.2f} MB")
-    
-    # with open(model_path, "wb") as f:
-    #     pickle.dump(model, f)
-        
+    print(f"Model saved successfully ({size_mb:.2f} MB)")
     print("Training complete.")
 
 if __name__ == "__main__":
