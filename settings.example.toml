@@ -81,7 +81,7 @@ growth = "off"                    # Disable trend
 
 # learning_rate = null             # Enable NeuralProphet auto learning rate
 # epochs = null                    # Enable NeuralProphet auto epochs
-batch_size = 2048                  # Batch size for training
+batch_size = 512                  # Batch size for training
 # Regularization (0.0 = no regularization)
 seasonality_reg = 0.005
 ar_reg = 0.1                      # AutoRegressive regularization
@@ -91,7 +91,7 @@ accelerator = "auto" # "cpu", "gpu", or "auto"
 # Network Architecture (Deep Learning Configuration)
 n_lags = 96              # 24 hours context (96 * 15min)
 n_forecasts = 96         # Predict 24 hours at once (96 * 15min)
-ar_layers = [64, 32]     # Deep AR-Net: Two hidden layers [64, 32]
+ar_layers = [128, 64]     # Deep AR-Net: Two hidden layers [128, 64]
 
 [model.tuning]
 # Hyperparameter optimization settings (now uses Optuna)
