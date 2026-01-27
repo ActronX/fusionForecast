@@ -2,6 +2,7 @@
 import os
 import pickle
 import pandas as pd
+import numpy as np
 import sys
 sys.path.append(os.getcwd())
 from src.config import settings
@@ -106,29 +107,52 @@ def run_forecast():
         print(f"Fetching last {fetch_hours} hours of history...")
         
         # 1. Fetch Historical Target (y)
-        target_field = settings['influxdb']['fields']['produced']
-        target_meas = settings['influxdb']['measurements']['produced']
-        target_bucket = settings['influxdb']['buckets']['history_produced']
-        prod_scale = settings['model']['preprocessing'].get('produced_scale', 1.0)
-        prod_offset = settings['model']['preprocessing'].get('produced_offset', '0m')
-
+        # Try live bucket first for dense AR context
+        live_bucket = settings['influxdb']['buckets']['live']
+        live_meas = settings['influxdb']['measurements']['live']
+        live_field = settings['influxdb']['fields']['live']
+        
+        # Scaling for live data might differ, check if it's already in Watts
+        # Based on check_db_history.py, live data mean is ~80-3000, looks like Watts.
+        
         query_history_y = f'''
         import "date"
-        from(bucket: "{target_bucket}")
+        from(bucket: "{live_bucket}")
           |> range(start: date.sub(d: {int(fetch_hours)}h, from: now()), stop: now())
-          |> filter(fn: (r) => r["_measurement"] == "{target_meas}")
-          |> filter(fn: (r) => r["_field"] == "{target_field}")
-          |> map(fn: (r) => ({{ r with _value: r._value * {prod_scale} }}))
-          |> timeShift(duration: {prod_offset})
+          |> filter(fn: (r) => r["_measurement"] == "{live_meas}")
+          |> filter(fn: (r) => r["_field"] == "{live_field}")
           |> pivot(rowKey:["_time"], columnKey: ["_field"], valueColumn: "_value")
         '''
         df_hist_y = db.query_dataframe(query_history_y)
         
+        # If live is empty, fallback to stats (less likely to be helpful for AR tail)
+        if df_hist_y.empty:
+            print(f"Warning: {live_bucket} empty. Falling back to stats bucket.")
+            target_field = settings['influxdb']['fields']['produced']
+            target_meas = settings['influxdb']['measurements']['produced']
+            target_bucket = settings['influxdb']['buckets']['history_produced']
+            prod_scale = settings['model']['preprocessing'].get('produced_scale', 1.0)
+            
+            query_history_y = f'''
+            import "date"
+            from(bucket: "{target_bucket}")
+              |> range(start: date.sub(d: {int(fetch_hours)}h, from: now()), stop: now())
+              |> filter(fn: (r) => r["_measurement"] == "{target_meas}")
+              |> filter(fn: (r) => r["_field"] == "{target_field}")
+              |> map(fn: (r) => ({{ r with _value: r._value * {prod_scale} }}))
+              |> pivot(rowKey:["_time"], columnKey: ["_field"], valueColumn: "_value")
+            '''
+            df_hist_y = db.query_dataframe(query_history_y)
+            y_col = target_field
+        else:
+            y_col = live_field
+
         # 2. Fetch Historical Regressors
-        # Using regressor_history bucket
         reg_hist_bucket = settings['influxdb']['buckets']['regressor_history']
         reg_hist_meas = settings['influxdb']['measurements']['regressor_history']
-        # Same fields as future
+        regressor_scale = settings['model']['preprocessing'].get('regressor_scale', 1.0)
+        regressor_offset = settings['model']['preprocessing'].get('regressor_offset', '0m')
+        
         query_history_reg = f'''
         import "date"
         from(bucket: "{reg_hist_bucket}")
@@ -150,8 +174,8 @@ def run_forecast():
             df_history = pd.merge(df_hist_y, df_hist_reg, on='ds', how='inner')
             
             # Rename y col
-            if target_field in df_history.columns:
-                df_history.rename(columns={target_field: 'y'}, inplace=True)
+            if y_col in df_history.columns:
+                df_history.rename(columns={y_col: 'y'}, inplace=True)
             
             # Ensure regressors are present
             for r in regressor_names:
@@ -163,36 +187,70 @@ def run_forecast():
             
             # Select columns
             df_history_final = df_history[['ds', 'y'] + regressor_names].copy()
+            df_history_final.dropna(subset=['y'], inplace=True)
             
             print(f"Found {len(df_history_final)} historical points.")
+            print(f"DEBUG: History range: {df_history_final['ds'].min()} to {df_history_final['ds'].max()}")
+            print(f"DEBUG: Future range: {df_future_final['ds'].min()} to {df_future_final['ds'].max()}")
             
             # Combine: History + Future
-            # Future has no 'y', so we leave it NaN (NP handles this for prediction)
-            df_future_final['y'] = pd.NA
-            
-            df_input = pd.concat([df_history_final, df_future_final], ignore_index=True)
-            df_input = df_input.sort_values('ds').reset_index(drop=True)
-            
-            # Fill missing regressors if any (due to join gaps)
-            for r in regressor_names:
-                df_input[r] = df_input[r].interpolate(method='linear', limit_direction='both')
-                
-        else:
-            print("Warning: Could not fetch sufficient history for AR. Forecasting might be degraded.")
-
-    print(f"Forecasting for {len(df_input)} points (History + Future)...")
-    print(f"DEBUG: df_input size: {len(df_input)}")
-    print(f"DEBUG: Duplicates in ds: {df_input['ds'].duplicated().sum()}")
-    print(f"DEBUG: NAs in y history: {df_input.iloc[:len(df_history_final)]['y'].isna().sum()}")
+    # Predict Loop (Recursive) to handle n_lags and avoid library bugs
+    print(f"Starting recursive forecasting for {len(df_future_final)} periods...")
     
-    # Predict
-    try:
-        forecast = model.predict(df_input)
-    except Exception as e:
-        print(f"DEBUG: Predict failed: {e}")
-        import traceback
-        traceback.print_exc()
-        raise e
+    current_history = df_history_final.tail(n_lags).copy()
+    future_points = df_future_final.copy()
+    predictions = []
+    
+    # We predict in chunks to speed up, or one by one if it's the only way
+    # Let's try one by one first to be absolute safe
+    for i in range(len(future_points)):
+        # Prepare input for this step
+        next_point = future_points.iloc[[i]].copy()
+        next_point['y'] = np.nan
+        
+        step_input = pd.concat([current_history.tail(n_lags), next_point], ignore_index=True)
+        step_input['y'] = pd.to_numeric(step_input['y'], errors='coerce')
+        
+        # Predict 1 step
+        try:
+            step_forecast = model.predict(step_input)
+            # Find the new yhat
+            if 'yhat1' in step_forecast.columns:
+                y_pred = step_forecast['yhat1'].iloc[-1]
+            elif 'yhat' in step_forecast.columns:
+                y_pred = step_forecast['yhat'].iloc[-1]
+            else:
+                y_pred = 0 # Fallback
+            
+            # Save prediction
+            row = next_point.copy()
+            row['yhat'] = y_pred
+            predictions.append(row)
+            
+            # Update history for next step
+            next_point['y'] = y_pred
+            current_history = pd.concat([current_history, next_point], ignore_index=True)
+            
+            if (i+1) % 100 == 0:
+                print(f"Predicted {i+1}/{len(future_points)} steps...")
+                
+        except Exception as e:
+            print(f"Error at step {i}: {e}")
+            break
+            
+    if not predictions:
+        print("Error: No predictions generated in loop.")
+        return
+        
+    forecast = pd.concat(predictions, ignore_index=True)
+    print(f"Generated {len(forecast)} forecast points.")
+    
+    # Debug: check columns
+    # print(f"DEBUG: Forecast columns: {forecast.columns.tolist()}")
+
+    # Rename yhat1 to yhat
+    if 'yhat1' in forecast.columns and 'yhat' not in forecast.columns:
+        forecast.rename(columns={'yhat1': 'yhat'}, inplace=True)
     
     # Rename yhat1 to yhat
     if 'yhat1' in forecast.columns and 'yhat' not in forecast.columns:
