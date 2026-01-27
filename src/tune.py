@@ -49,13 +49,14 @@ def evaluate_combination(params, df, regressor_names):
             weekly_seasonality=settings['model']['neuralprophet'].get('weekly_seasonality', False),
             daily_seasonality=settings['model']['neuralprophet'].get('daily_seasonality', True),
             seasonality_mode=params.get('seasonality_mode', 'additive'),
-            learning_rate=params['learning_rate'],
-            epochs=params['epochs'],
+            learning_rate=None,  # Use NeuralProphet's auto learning rate range test
+            epochs=None,  # Auto-set based on dataset size (1000-4000 steps)
             n_lags=settings['model']['neuralprophet'].get('n_lags', 0),
             n_forecasts=settings['model']['neuralprophet'].get('n_forecasts', 96),
+            batch_size=settings['model']['neuralprophet'].get('batch_size', 128),
             # d_hidden/num_hidden_layers removed due to incompatibility
             ar_layers=settings['model']['neuralprophet'].get('ar_layers', []),
-            trend_reg=params['trend_reg'],
+            trend_reg=0,  # No trend regularization (growth='off' for PV)
             seasonality_reg=params['seasonality_reg'],
             ar_reg=params.get('ar_reg', 0.0),
             collect_metrics=False,
@@ -138,20 +139,16 @@ def evaluate_combination(params, df, regressor_names):
         return float('inf'), float('inf'), float('inf')
 
 def objective(trial, df, regressor_names):
-    # Suggest parameters for NeuralProphet based on known working values
+    # Simplified tuning: focus on PV-critical parameters only
+    # Use NeuralProphet's auto-tuning for learning_rate and epochs
     params = {
-        # LR around 0.001 (e.g. 0.0001 to 0.01)
-        'learning_rate': trial.suggest_float('learning_rate', 0.0001, 0.01, log=True),
-        # Epochs around 40 (e.g. 20-60)
-        'epochs': trial.suggest_int('epochs', 20, 60),
-        # Regularization: focused on small values around 0.01
-        'trend_reg': trial.suggest_float('trend_reg', 0.0, 0.1),
-        'seasonality_reg': trial.suggest_float('seasonality_reg', 0.0, 0.1),
-        'ar_reg': trial.suggest_float('ar_reg', 0.0, 0.1),
-        'future_regressor_regularization': trial.suggest_float('future_regressor_regularization', 0.0, 0.1),
-        # Modes: stick to what likely works (additive often better for PV if data standardized)
-        'seasonality_mode': trial.suggest_categorical('seasonality_mode', ['additive']), 
-        'regressor_mode': trial.suggest_categorical('regressor_mode', ['additive', 'multiplicative']),
+        # Regularization: small values to prevent overfitting
+        'seasonality_reg': trial.suggest_float('seasonality_reg', 0.0, 0.1),  # NP default: 0
+        'ar_reg': trial.suggest_float('ar_reg', 0.0, 0.1),  # NP default: 0
+        # Mode: critical for PV (additive vs multiplicative weather impact)
+        'regressor_mode': trial.suggest_categorical('regressor_mode', ['additive', 'multiplicative']),  # NP default: None
+        # Fixed values (using defaults or known-good settings)
+        'seasonality_mode': 'additive',  # Standard for normalized PV data
     }
     
     score, wmape, rmse = evaluate_combination(params, df, regressor_names)

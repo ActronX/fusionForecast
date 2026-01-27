@@ -26,8 +26,16 @@ from src.data_loader import fetch_training_data, validate_data_sufficiency
 
 
 def train_model():
+    import torch
     print("Starting training pipeline... (NeuralProphet)")
     
+    # Check GPU
+    print(f"CUDA Available: {torch.cuda.is_available()}")
+    if torch.cuda.is_available():
+        print(f"GPU Device: {torch.cuda.get_device_name(0)}")
+    else:
+        print("WARNING: GPU not detected. Training will be slow on CPU!")
+
     # Fetch and prepare data using shared loader
     result = fetch_training_data(verbose=True)
     if result is None:
@@ -50,33 +58,30 @@ def train_model():
         weekly_seasonality=p_settings.get('weekly_seasonality', False), 
         daily_seasonality=p_settings.get('daily_seasonality', True),
         seasonality_mode=p_settings.get('seasonality_mode', 'additive'),
-        learning_rate=p_settings.get('learning_rate', 1e-4),
-        epochs=p_settings.get('epochs', 10),
+        learning_rate=p_settings.get('learning_rate'), # Defaults to None (auto) if null in settings
+        epochs=p_settings.get('epochs'),               # Defaults to None (auto) if null in settings
         batch_size=p_settings.get('batch_size', 128),
         # Regularization parameters
-        trend_reg=p_settings.get('trend_reg', 0.0),
+        trend_reg=0, # Hardcoded to 0 as in tune.py (growth='off')
         seasonality_reg=p_settings.get('seasonality_reg', 0.0),
         ar_reg=p_settings.get('ar_reg', 0.0),
         # AutoRegressive architecture
-        # AutoRegressive architecture
-        n_lags=p_settings.get('n_lags', 0),
-        n_forecasts=p_settings.get('n_forecasts', 1),
+        n_lags=p_settings.get('n_lags', 96),
+        n_forecasts=p_settings.get('n_forecasts', 96),
         # d_hidden/num_hidden_layers removed for v0.9.0 compatibility
-        ar_layers=p_settings.get('ar_layers', []),
+        ar_layers=p_settings.get('ar_layers', [64, 32]),
         accelerator=p_settings.get('accelerator', 'auto'),
         drop_missing=True
     )
     
     # Add future regressors (weather data)
     reg_mode = p_settings.get('regressor_mode', 'additive')
-    reg_reg = p_settings.get('future_regressor_regularization', 0.0)
 
     for reg_name in regressor_names:
-        print(f"Adding future regressor: {reg_name} (mode={reg_mode}, reg={reg_reg})")
+        print(f"Adding future regressor: {reg_name} (mode={reg_mode})")
         model.add_future_regressor(
             name=reg_name,
-            mode=reg_mode,
-            regularization=reg_reg
+            mode=reg_mode
         )
     
     print(f"Training data summary before processing:\n{df_prophet.describe()}")

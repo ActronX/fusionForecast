@@ -79,23 +79,19 @@ daily_seasonality = true          # Daily patterns
 seasonality_mode = "additive"    # Saisonal effect type
 growth = "off"                    # Disable trend
 
-learning_rate = 0.01             # Learning rate
-epochs = 40                      # Training epochs
-batch_size = 128                  # Batch size for training
+learning_rate = null             # Enable NeuralProphet auto learning rate
+epochs = null                    # Enable NeuralProphet auto epochs
+batch_size = 2048                  # Batch size for training
 # Regularization (0.0 = no regularization)
-trend_reg = 0.0
-seasonality_reg = 0.0
-ar_reg = 0.0                      # AutoRegressive regularization
-future_regressor_regularization = 0.0
-regressor_mode = "additive"       # Regressor mode: "additive" or "multiplicative"
+seasonality_reg = 0.005
+ar_reg = 0.1                      # AutoRegressive regularization
+regressor_mode = "multiplicative"       # Regressor mode: "additive" or "multiplicative"
 accelerator = "auto" # "cpu", "gpu", or "auto"
 
 # Network Architecture (Deep Learning Configuration)
 n_lags = 96              # 24 hours context (96 * 15min)
 n_forecasts = 96         # Predict 24 hours at once (96 * 15min)
-ar_layers = [32, 16]     # Custom AR network (Deep AR)
-num_hidden_layers = 2    # Number of hidden layers (Deep Model)
-d_hidden = 32            # Hidden layer dimension
+ar_layers = [64, 32]     # Deep AR-Net: Two hidden layers [64, 32]
 
 [model.tuning]
 # Hyperparameter optimization settings (now uses Optuna)
