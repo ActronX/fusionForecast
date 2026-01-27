@@ -83,9 +83,9 @@ growth = "off"                    # Disable trend
 # epochs = null                    # Enable NeuralProphet auto epochs
 batch_size = 512                  # Batch size for training
 # Regularization (0.0 = no regularization)
-seasonality_reg = 0.005
-ar_reg = 0.1                      # AutoRegressive regularization
-regressor_mode = "multiplicative"       # Regressor mode: "additive" or "multiplicative"
+seasonality_reg = 0.0
+ar_reg = 0.0                      # AutoRegressive regularization
+regressor_mode = "additive"       # Regressor mode: "additive" or "multiplicative"
 accelerator = "auto" # "cpu", "gpu", or "auto"
 
 # Network Architecture (Deep Learning Configuration)
