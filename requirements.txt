@@ -1,4 +1,4 @@
-prophet>=1.1
+neuralprophet[live]
 pandas>=2.0,<3.0.0
 numpy>=1.24,<2.0.0
 influxdb-client>=1.36

@@ -1,7 +1,7 @@
+
 import pandas as pd
 import numpy as np
-from prophet import Prophet
-from prophet.diagnostics import cross_validation
+from neuralprophet import NeuralProphet
 import sys
 import os
 import traceback
@@ -13,60 +13,82 @@ import multiprocessing
 # Ensure src can be imported
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
-# Silence cmdstanpy/optuna logs
-logging.getLogger('cmdstanpy').disabled = True
-logging.getLogger('cmdstanpy').propagate = False
-logging.getLogger('cmdstanpy').setLevel(logging.CRITICAL)
+# Silence logs
+logging.getLogger("pytorch_lightning").setLevel(logging.WARNING)
+logging.getLogger("neuralprophet").setLevel(logging.WARNING)
+logging.getLogger("NP").setLevel(logging.WARNING)
 optuna.logging.set_verbosity(optuna.logging.WARNING)
+import warnings
+# Suppress specific warnings
+warnings.filterwarnings("ignore", ".*Trying to infer the `batch_size`.*")
+warnings.filterwarnings("ignore", ".*DataFrameGroupBy.apply operated on the grouping columns.*")
+warnings.filterwarnings("ignore", ".*Series.view is deprecated.*")
+warnings.filterwarnings("ignore", ".*Argument ``multivariate`` is an experimental feature.*")
+warnings.filterwarnings("ignore", ".*is deprecated, use `isinstance.*")
+warnings.filterwarnings("ignore", ".*Defined frequency .* is different than major frequency.*")
+warnings.filterwarnings("ignore", ".*You called .*but have no logger configured.*")
+
+
 
 from src.config import settings
 from src.data_loader import fetch_training_data, validate_data_sufficiency
 
-def evaluate_combination(params, df, regressor_names, cv_params):
+def evaluate_combination(params, df, regressor_names):
     """
-    Evaluates a single combination of hyperparameters.
+    Evaluates a single combination of hyperparameters using a simple train/test split.
     """
     try:
-        m = Prophet(
-            growth='flat',
-            yearly_seasonality=settings['model']['prophet'].get('yearly_seasonality', True),
-            daily_seasonality=True,
-            weekly_seasonality=False,
-            changepoint_prior_scale=params['changepoint_prior_scale'],
-            seasonality_prior_scale=params['seasonality_prior_scale'],
-            seasonality_mode=params.get('seasonality_mode', 'multiplicative')
+        # Configuration
+        train_days = settings['model']['training_days']
+        
+        # Setup NeuralProphet
+        m = NeuralProphet(
+            growth='linear',
+            yearly_seasonality=settings['model']['neuralprophet'].get('yearly_seasonality', False),
+            weekly_seasonality=settings['model']['neuralprophet'].get('weekly_seasonality', False),
+            daily_seasonality=settings['model']['neuralprophet'].get('daily_seasonality', True),
+            seasonality_mode=params.get('seasonality_mode', 'additive'),
+            learning_rate=params['learning_rate'],
+            epochs=params['epochs'],
+            n_lags=settings['model']['neuralprophet'].get('n_lags', 0),
+            d_hidden=settings['model']['neuralprophet'].get('d_hidden', 16),
+            num_hidden_layers=settings['model']['neuralprophet'].get('num_hidden_layers', 0),
+            ar_layers=settings['model']['neuralprophet'].get('ar_layers', []),
+            trend_reg=params['trend_reg'],
+            seasonality_reg=params['seasonality_reg'],
+            collect_metrics=False,
+            accelerator=settings['model']['neuralprophet'].get('accelerator', 'auto')
         )
+        
+        reg_mode = params.get('regressor_mode', 'additive')
+        
         for reg_name in regressor_names:
-            # We can customize prior scales per regressor if we want, 
-            # but for now we stick to the global setting.
-            # However, if we have Clear Sky, we might want it to be additive or multiplicative depending on physics.
-            # Usually PV = ALLSKY * Efficiency.
-            # But the user specifically wanted these features.
-            # "CLRSKY" is a base, "ALLSKY" is the actual driver.
-            # We let Prophet figure it out with the mode in settings.
-            
-            m.add_regressor(
-                reg_name, 
-                mode=params.get('regressor_mode', 'multiplicative'), 
-                prior_scale=params['regressor_prior_scale'], 
-                standardize=False
+            m.add_future_regressor(
+                name=reg_name, 
+                mode=reg_mode
             )
         
-        m.fit(df)
+        # Split Data
+        # We use the last 20% for validation, or simpler: last 14 days if possible.
+        # NP split_df uses fractions.
+        freq = '15min'
+        df_train, df_val = m.split_df(df, freq=freq, valid_p=0.2)
         
-        # Cross-validation
-        df_cv = cross_validation(
-            m, 
-            initial=cv_params['initial'], 
-            period=cv_params['period'], 
-            horizon=cv_params['horizon'], 
-            disable_tqdm=True, 
-            parallel=None
-        )
+        # Fit
+        m.fit(df_train, freq=freq, progress=None)
         
-        # Calculate metrics manually to apply consistent filtering
-        y_true = df_cv['y']
-        y_pred = df_cv['yhat'].clip(lower=0)
+        # Predict on validation
+        forecast = m.predict(df_val)
+        
+        # Evaluate
+        # NP forecast columns: ds, y, yhat1
+        if 'yhat1' in forecast.columns:
+            y_pred_col = 'yhat1'
+        else:
+            y_pred_col = 'yhat'
+            
+        y_true = forecast['y']
+        y_pred = forecast[y_pred_col].clip(lower=0)
         
         threshold = settings['model'].get('tuning', {}).get('night_threshold', 50)
         valid_mask = y_true > threshold
@@ -74,13 +96,7 @@ def evaluate_combination(params, df, regressor_names, cv_params):
         if valid_mask.sum() > 0:
              rmse = np.sqrt(np.mean((y_true[valid_mask] - y_pred[valid_mask])**2))
              mape = np.mean(np.abs((y_true[valid_mask] - y_pred[valid_mask]) / y_true[valid_mask]))
-             # Combined score: RMSE + weighted MAPE (MAPE is 0.0-1.0, so we scale it)
-             # This formula is specifically chosen for PV forecasting:
-             # 1. RMSE (primary): Ensures total energy volume is correct (critical for battery charging).
-             # 2. MAPE (weighting): Penalizes "nervous" predictions in low-light conditions (morning/evening),
-             #    which improves self-consumption planning accuracy.
-             # Result is a balanced metric that values both peak power accuracy and curve shape.
-             # LOWER IS BETTER (0 = Perfect prediction)
+             # Combined score formula
              score = rmse * (1 + mape)
         else:
              score = float('inf')
@@ -91,20 +107,21 @@ def evaluate_combination(params, df, regressor_names, cv_params):
 
     except Exception as e:
         print(f"Failed for {params}: {e}")
-        traceback.print_exc()
         return float('inf'), float('inf'), float('inf')
 
-def objective(trial, df, regressor_names, cv_params):
-    # Suggest parameters
+def objective(trial, df, regressor_names):
+    # Suggest parameters for NeuralProphet
     params = {
-        'changepoint_prior_scale': trial.suggest_float('changepoint_prior_scale', 0.001, 0.5, log=True),
-        'seasonality_prior_scale': trial.suggest_float('seasonality_prior_scale', 0.001, 10.0, log=True),
-        'regressor_prior_scale': trial.suggest_float('regressor_prior_scale', 0.001, 10.0, log=True),
-        'regressor_mode': trial.suggest_categorical('regressor_mode', ['additive', 'multiplicative']),
+        'learning_rate': trial.suggest_float('learning_rate', 0.001, 0.1, log=True),
+        'epochs': trial.suggest_int('epochs', 20, 100),
+        'trend_reg': trial.suggest_float('trend_reg', 0.0, 10.0),
+        'seasonality_reg': trial.suggest_float('seasonality_reg', 0.0, 10.0),
+        'future_regressor_regularization': trial.suggest_float('future_regressor_regularization', 0.0, 10.0),
         'seasonality_mode': trial.suggest_categorical('seasonality_mode', ['additive', 'multiplicative']),
+        'regressor_mode': trial.suggest_categorical('regressor_mode', ['additive', 'multiplicative']),
     }
     
-    score, rmse, mape = evaluate_combination(params, df, regressor_names, cv_params)
+    score, rmse, mape = evaluate_combination(params, df, regressor_names)
     
     # Store additional metrics in trial
     trial.set_user_attr("rmse", rmse)
@@ -139,26 +156,11 @@ def tune_hyperparameters():
     df, regressor_names = result
     
     # Validation
-    total_days = (df['ds'].max() - df['ds'].min()).days
     training_days = settings['model']['training_days']
     if not validate_data_sufficiency(df, training_days):
         return
 
-    # CV Parameters
-    target_horizon = '1 days'
-    if total_days > 720:
-        initial, period, horizon = '700 days', '14 days', target_horizon
-    elif total_days > 400:
-        initial, period, horizon = '370 days', '7 days', target_horizon
-    else:
-        initial = f'{max(5, int(total_days * 0.6))} days'
-        period = f'{max(2, int(total_days * 0.1))} days'
-        horizon = target_horizon
-    
-    cv_params = {'initial': initial, 'period': period, 'horizon': horizon}
-    print(f"CV Settings: {cv_params}")
-
-    # Optuna Study
+    # Algorithm settings
     n_trials = settings['model']['tuning'].get('trials', 30)
     process_count = settings['model']['tuning'].get('process_count', 4)
     
@@ -168,26 +170,30 @@ def tune_hyperparameters():
     counter = multiprocessing.Value('i', 0)
     lock = multiprocessing.Lock()
 
-    # We use functools.partial instead of lambda for better pickling support on Windows
-    # when using n_jobs > 1.
-    objective_with_args = partial(objective, df=df, regressor_names=regressor_names, cv_params=cv_params)
+    objective_with_args = partial(objective, df=df, regressor_names=regressor_names)
     callback = partial(logging_callback, n_trials=n_trials, counter=counter, lock=lock)
     
     study = optuna.create_study(
         direction='minimize',
         sampler=optuna.samplers.TPESampler(multivariate=True)
     )
-    study.optimize(
-        objective_with_args, 
-        n_trials=n_trials,
-        n_jobs=process_count,
-        callbacks=[callback]
-    )
+    
+    try:
+        study.optimize(
+            objective_with_args, 
+            n_trials=n_trials,
+            n_jobs=process_count,
+            callbacks=[callback]
+        )
+    except KeyboardInterrupt:
+        print("\nTuning interrupted by user.")
+    except Exception as e:
+        print(f"Optimization failed: {e}")
+        traceback.print_exc()
 
     print("\n----------------------------------------------------------------")
     print("TOP 10 TRIALS")
     print("----------------------------------------------------------------")
-    # Sort trials by value and get top 10 finished ones
     finished_trials = [t for t in study.trials if t.state == optuna.trial.TrialState.COMPLETE]
     top_trials = sorted(finished_trials, key=lambda t: t.value)[:10]
     
@@ -197,17 +203,17 @@ def tune_hyperparameters():
         params_str = ", ".join([f"{k}: {v:.4f}" if isinstance(v, float) else f"{k}: {v}" for k, v in t.params.items()])
         print(f"#{i+1:2}: Trial {t.number:2} - Score: {t.value:.4f} (RMSE: {rmse_val:.4f}, MAPE: {mape_val:.4f}) - Params: {{{params_str}}}")
     
-    print("----------------------------------------------------------------")
-    print(f"BEST PARAMETERS (Trial {study.best_trial.number})")
-    print("----------------------------------------------------------------")
-    for key, value in study.best_params.items():
-        if isinstance(value, float):
-            print(f"{key} = {value:.6f}")
-        else:
-            print(f"{key} = \"{value}\"")
-    print("----------------------------------------------------------------")
-    print("Update these values in your settings.toml [model.prophet] section!")
+    if study.best_trial:
+        print("----------------------------------------------------------------")
+        print(f"BEST PARAMETERS (Trial {study.best_trial.number})")
+        print("----------------------------------------------------------------")
+        for key, value in study.best_params.items():
+            if isinstance(value, float):
+                print(f"{key} = {value:.6f}")
+            else:
+                print(f"{key} = \"{value}\"")
+        print("----------------------------------------------------------------")
+        print("Update these values in your settings.toml [model.neuralprophet] section!")
 
 if __name__ == "__main__":
     tune_hyperparameters()
-

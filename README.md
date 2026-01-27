@@ -1,13 +1,13 @@
 # FusionForecast
 
-FusionForecast is an ML-based tool for forecasting time series data (e.g., PV generation) using [**Prophet**](https://facebook.github.io/prophet/), [**InfluxDB**](https://www.influxdata.com/) and [**Open-Meteo**](https://open-meteo.com/). It trains a model based on historical data and external regressors (e.g., weather forecasts) and writes the forecasts back into an InfluxDB.
+FusionForecast is an ML-based tool for forecasting time series data (e.g., PV generation) using [**NeuralProphet**](https://neuralprophet.com/), [**InfluxDB**](https://www.influxdata.com/) and [**Open-Meteo**](https://open-meteo.com/). It trains a model based on historical data and external regressors (e.g., weather forecasts) and writes the forecasts back into an InfluxDB.
 
 ![Logo](Logo.jpg)
 
 ## Features
 
 - **Data Source**: Reads training data (target value and regressor) from InfluxDB.
-- **Modeling**: Uses Facebook Prophet for time series forecasting.
+- **Modeling**: Uses NeuralProphet (PyTorch) for time series forecasting.
 - **Server-Side Aggregation**: Performs downsampling (e.g., to 1h means) directly in the database.
 - **Configurable**: All settings (buckets, measurements, offsets) are defined in `settings.toml`.
 
@@ -216,6 +216,56 @@ The container automatically:
 - ✅ Generates PV forecasts every 15 minutes.
 - ✅ Updates nowcast corrections every 15 minutes.
 - ✅ Retrains model monthly (1st of month at 02:00).
+
+## Script Overview
+
+Here is a detailed description of the Python scripts located in `src/`:
+
+### Core Pipeline
+- **`src/train.py`**: Trains the **Production** (PV) model. Fetches historical production and regressor data, trains Prophet, and saves `prophet_model.pkl`.
+- **`src/forecast.py`**: Generates **Production** forecasts. Loads the model, fetches future weather data, predicts generation, and writes to InfluxDB.
+- **`src/nowcast.py`**: **Real-Time Correction**. Adjusts the forecast based on the last 3 hours of actual production to react to immediate weather changes (e.g., fog).
+
+### Data Fetching & Calculations
+- **`src/fetch_future_weather.py`**: Fetches **current** weather forecasts from Open-Meteo. If `use_pvlib` is enabled, it automatically triggers the consolidated calculation.
+- **`src/fetch_historic_weather.py`**: Fetches **historical** weather data. If `use_pvlib` is enabled, it automatically triggers the consolidated calculation.
+- **`src/calc_effective_irradiance.py`**: **Consolidated Physics Model**. Calculates Plane of Array (POA) irradiance, applies Incidence Angle Modifier (IAM) losses, and computes the SAPM cell temperature.
+
+### Utilities & Maintenance
+
+- **`src/tune.py`**: Performs **Hyperparameter Tuning** using **Optuna** to find the optimal NeuralProphet parameters (e.g., `learning_rate`, `epochs`) for your specific data.
+
+- **`src/plot_model.py`**: Generates interactive Plotly charts of the model components (trend, seasonality) for visual inspection.
+
+
+## InfluxDB Data Flow
+
+This section describes which data is read from and written to InfluxDB, and why this is necessary.
+
+### 1. Training (Model Creation)
+*Scripts: `src/train.py`*
+
+- **Reads**:
+    - **Production History** (`buckets.history_produced`): Actual historical PV generation data.
+    - **Regressor History** (`buckets.regressor_history`): Historical weather data (e.g., solar irradiance) corresponding to the production history.
+- **Why**: The NeuralProphet model needs to learn the relationship between the target variable (Production) and time/weather. For example, it learns that "high irradiance = high production".
+
+### 2. Forecasting (Prediction)
+*Scripts: `src/forecast.py`*
+
+- **Reads**:
+    - **Future Regressor** (`buckets.regressor_future`): The current weather forecast for the next few days.
+- **Writes**:
+    - **Target Forecast** (`buckets.target_forecast`): The predicted values for production.
+- **Why**: To make a prediction for tomorrow, the model needs to know the expected weather (Regressor). The result is then stored so it can be visualized in Grafana or used by an energy management system (e.g., to charge a battery).
+
+### 3. Data Fetching (External Sources)
+*Scripts: `src/fetch_future_weather.py`, `src/fetch_historic_weather.py`*
+
+- **Writes**:
+    - **Historic Weather** (`buckets.regressor_history`): Stores historical weather data fetched from Open-Meteo.
+    - **Future Weather** (`buckets.regressor_future`): Stores the latest weather forecast from Open-Meteo.
+- **Why**: FusionForecast relies on external weather data (Irradiance) to make accurate PV predictions. This data must be actively fetched and stored in InfluxDB so the Training and Forecast scripts can access it.
 
 ### InfluxDB Login Guide for FusionForecast
 👉 **[Read the InfluxDB Documentation](influxdb-login-guide.md)**
