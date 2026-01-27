@@ -73,6 +73,7 @@ def train_model():
         ar_reg=p_settings.get('ar_reg', 0.0),
         # Network Architecture
         n_lags=p_settings.get('n_lags', 0),
+        n_forecasts=p_settings.get('n_forecasts', 1),
         ar_layers=p_settings.get('ar_layers', []),
         accelerator=p_settings.get('accelerator', 'auto'),
         drop_missing=True

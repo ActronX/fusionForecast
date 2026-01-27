@@ -39,7 +39,8 @@ def run_forecast():
         
     # Check if model has n_lags enabled (AR model)
     n_lags = getattr(model, 'n_lags', 0)
-    print(f"Model n_lags: {n_lags}")
+    n_forecasts = getattr(model, 'n_forecasts', 1)
+    print(f"Model n_lags: {n_lags}, n_forecasts: {n_forecasts}")
 
     # Initialize DB
     db = InfluxDBWrapper()
@@ -186,56 +187,99 @@ def run_forecast():
                      df_history[r] = df_history[r].interpolate(method='linear', limit_direction='both')
             
             # Select columns
-            df_history_final = df_history[['ds', 'y'] + regressor_names].copy()
-            df_history_final.dropna(subset=['y'], inplace=True)
+            df_history_final = df_history.copy()
+            df_history_final['ds'] = pd.to_datetime(df_history_final['ds'])
+            df_history_final = df_history_final.set_index('ds').resample('15min').mean()
+            df_history_final = df_history_final.fillna(0) # IMPORTANT: Fill gaps with 0 for PV stability
+            df_history_final = df_history_final.reset_index()
             
-            print(f"Found {len(df_history_final)} historical points.")
+            # Select required columns
+            df_history_final = df_history_final[['ds', 'y'] + regressor_names].copy()
+            
+            print(f"Found {len(df_history_final)} historical points after resampling/zero-filling.")
             print(f"DEBUG: History range: {df_history_final['ds'].min()} to {df_history_final['ds'].max()}")
             print(f"DEBUG: Future range: {df_future_final['ds'].min()} to {df_future_final['ds'].max()}")
             
-            # Combine: History + Future
-    # Predict Loop (Recursive) to handle n_lags and avoid library bugs
-    print(f"Starting recursive forecasting for {len(df_future_final)} periods...")
+    # Predict Loop (Recursive Chunks)
+    print(f"Starting chunked forecasting for {len(df_future_final)} periods (step={n_forecasts})...")
     
     current_history = df_history_final.tail(n_lags).copy()
     future_points = df_future_final.copy()
     predictions = []
     
-    # We predict in chunks to speed up, or one by one if it's the only way
-    # Let's try one by one first to be absolute safe
-    for i in range(len(future_points)):
-        # Prepare input for this step
-        next_point = future_points.iloc[[i]].copy()
-        next_point['y'] = np.nan
+    # Process in chunks of n_forecasts
+    for i in range(0, len(future_points), n_forecasts):
+        # 1. Prepare Chunk
+        chunk = future_points.iloc[i : i + n_forecasts].copy()
         
-        step_input = pd.concat([current_history.tail(n_lags), next_point], ignore_index=True)
+        # Ensure regressors are not NaN
+        for r in regressor_names:
+            if chunk[r].isna().any():
+                chunk[r] = chunk[r].interpolate(method='linear', limit_direction='both').fillna(0)
+
+        actual_len = len(chunk)
+        chunk['y'] = np.nan
+        
+        # 2. Pad chunk to exactly n_forecasts if needed (NeuralProphet requirement for multi-step)
+        if actual_len < n_forecasts:
+            last_ds = chunk['ds'].max()
+            freq = '15min'
+            pad_len = n_forecasts - actual_len
+            padding = pd.DataFrame({
+                'ds': pd.date_range(start=last_ds + pd.Timedelta(freq), periods=pad_len, freq=freq),
+                'y': np.nan
+            })
+            for col in regressor_names:
+                padding[col] = chunk[col].iloc[-1]
+            chunk = pd.concat([chunk, padding], ignore_index=True)
+
+        # 3. Concatenate history + chunk
+        step_input = pd.concat([current_history.tail(n_lags), chunk], ignore_index=True)
         step_input['y'] = pd.to_numeric(step_input['y'], errors='coerce')
         
-        # Predict 1 step
+        if i == 0:
+             print(f"DEBUG: step_input tail:\n{step_input.tail(5)}")
+             print(f"DEBUG: step_input head of chunk:\n{step_input.iloc[n_lags:n_lags+5]}")
+
         try:
+            # 4. Predict multi-step
             step_forecast = model.predict(step_input)
-            # Find the new yhat
-            if 'yhat1' in step_forecast.columns:
-                y_pred = step_forecast['yhat1'].iloc[-1]
-            elif 'yhat' in step_forecast.columns:
-                y_pred = step_forecast['yhat'].iloc[-1]
-            else:
-                y_pred = 0 # Fallback
             
-            # Save prediction
-            row = next_point.copy()
-            row['yhat'] = y_pred
-            predictions.append(row)
+            # 5. Extract results using "diagonal" retrieval
+            # In NeuralProphet multi-step mode (n_forecasts > 1), without intermediate 'y',
+            # the k-th step prediction for row 'n_lags + k - 1' is found in column 'yhat{k}'.
             
-            # Update history for next step
-            next_point['y'] = y_pred
-            current_history = pd.concat([current_history, next_point], ignore_index=True)
+            chunk_preds = []
+            for k in range(1, actual_len + 1):
+                col_name = f'yhat{k}'
+                row_idx = n_lags + k - 1
+                if col_name in step_forecast.columns and row_idx < len(step_forecast):
+                    val = step_forecast.iloc[row_idx][col_name]
+                    chunk_preds.append(val)
+                else:
+                    # Fallback to yhat1 if available (should be captured by the loop logic though)
+                    chunk_preds.append(0.0)
             
-            if (i+1) % 100 == 0:
-                print(f"Predicted {i+1}/{len(future_points)} steps...")
+            # 6. Save results
+            res_chunk = future_points.iloc[i : i + actual_len].copy()
+            res_chunk['yhat'] = chunk_preds
+            predictions.append(res_chunk)
+            
+            # 7. Update history for NEXT chunk (Recursive transition)
+            new_history = res_chunk.copy()
+            new_history['y'] = res_chunk['yhat']
+            # Select only columns needed for the model (ds, y, and regressors)
+            keep_cols = ['ds', 'y'] + [col for col in regressor_names if col in new_history.columns]
+            new_history = new_history[keep_cols]
+            current_history = pd.concat([current_history, new_history], ignore_index=True)
+            
+            if (i + actual_len) % n_forecasts == 0 or (i + actual_len) == len(future_points):
+                print(f"Predicted {min(i + actual_len, len(future_points))}/{len(future_points)} steps...")
                 
         except Exception as e:
             print(f"Error at step {i}: {e}")
+            import traceback
+            traceback.print_exc()
             break
             
     if not predictions:
