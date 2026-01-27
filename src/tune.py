@@ -203,8 +203,17 @@ def tune_hyperparameters():
     
     study = optuna.create_study(
         direction='minimize',
-        sampler=optuna.samplers.TPESampler(multivariate=True)
+        sampler=optuna.samplers.TPESampler()
     )
+    
+    # Enqueue a baseline trial with NeuralProphet defaults (Trial 0)
+    # This benchmarks how the model performs without any tuning key parameters
+    print("Enqueuing baseline trial (Trial 0) with default parameters...")
+    study.enqueue_trial({
+        "seasonality_reg": 0.0,
+        "ar_reg": 0.0,
+        "regressor_mode": "additive" 
+    })
     
     try:
         # Evaluate objective directly

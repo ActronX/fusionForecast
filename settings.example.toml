@@ -89,7 +89,7 @@ regressor_mode = "multiplicative"       # Regressor mode: "additive" or "multipl
 accelerator = "auto" # "cpu", "gpu", or "auto"
 
 # Network Architecture (Deep Learning Configuration)
-n_lags = 96              # 24 hours context (96 * 15min)
+n_lags = 288              # 72 hours context (288 * 15min = 3 days) for weather pattern recognition
 n_forecasts = 96         # Predict 24 hours at once (96 * 15min)
 ar_layers = [128, 64]     # Deep AR-Net: Two hidden layers [128, 64]
 
