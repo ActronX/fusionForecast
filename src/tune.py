@@ -13,9 +13,9 @@ import optuna
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
 # Silence logs
-logging.getLogger("pytorch_lightning").setLevel(logging.WARNING)
-logging.getLogger("neuralprophet").setLevel(logging.WARNING)
-logging.getLogger("NP").setLevel(logging.WARNING)
+logging.getLogger("pytorch_lightning").setLevel(logging.ERROR)
+logging.getLogger("neuralprophet").setLevel(logging.ERROR)
+logging.getLogger("NP").setLevel(logging.ERROR)
 optuna.logging.set_verbosity(optuna.logging.WARNING)
 import warnings
 # Suppress specific warnings
@@ -50,14 +50,15 @@ def evaluate_combination(params, df, regressor_names):
             learning_rate=params['learning_rate'],
             epochs=params['epochs'],
             n_lags=settings['model']['neuralprophet'].get('n_lags', 0),
-            d_hidden=settings['model']['neuralprophet'].get('d_hidden', 16),
-            num_hidden_layers=settings['model']['neuralprophet'].get('num_hidden_layers', 0),
+            n_forecasts=settings['model']['neuralprophet'].get('n_forecasts', 96),
+            # d_hidden/num_hidden_layers removed due to incompatibility
             ar_layers=settings['model']['neuralprophet'].get('ar_layers', []),
             trend_reg=params['trend_reg'],
             seasonality_reg=params['seasonality_reg'],
             ar_reg=params.get('ar_reg', 0.0),
             collect_metrics=False,
-            accelerator=settings['model']['neuralprophet'].get('accelerator', 'auto')
+            accelerator=settings['model']['neuralprophet'].get('accelerator', 'auto'),
+            drop_missing=True
         )
         
         reg_mode = params.get('regressor_mode', 'additive')
@@ -69,8 +70,6 @@ def evaluate_combination(params, df, regressor_names):
             )
         
         # Split Data
-        # We use the last 20% for validation, or simpler: last 14 days if possible.
-        # NP split_df uses fractions.
         freq = '15min'
         df_train, df_val = m.split_df(df, freq=freq, valid_p=0.2)
         
@@ -80,33 +79,45 @@ def evaluate_combination(params, df, regressor_names):
         # Predict on validation
         forecast = m.predict(df_val)
         
-        # Evaluate
-        # NP forecast columns: ds, y, yhat1
-        if 'yhat1' in forecast.columns:
-            y_pred_col = 'yhat1'
-        else:
-            y_pred_col = 'yhat'
-            
+        # Validate Forecast
+        
+        # Evaluate over all forecast steps (horizon)
+        yhat_cols = [c for c in forecast.columns if c.startswith('yhat')]
         y_true = forecast['y']
-        y_pred = forecast[y_pred_col].clip(lower=0)
         
         threshold = settings['model'].get('tuning', {}).get('night_threshold', 50)
-        valid_mask = y_true > threshold
         
-        if valid_mask.sum() > 0:
-             rmse = np.sqrt(np.mean((y_true[valid_mask] - y_pred[valid_mask])**2))
-             mape = np.mean(np.abs((y_true[valid_mask] - y_pred[valid_mask]) / y_true[valid_mask]))
-             # Combined score formula
-             score = rmse * (1 + mape)
+        abs_errors = []
+        y_true_sum = 0
+        
+        for col in yhat_cols:
+            y_pred = forecast[col].clip(lower=0)
+            
+            # Check for NaNs and apply night threshold
+            valid_mask = ~y_true.isna() & ~y_pred.isna() & (y_true > threshold)
+            
+            if valid_mask.sum() > 0:
+                # Accumulate errors for WMAPE
+                abs_diff = np.abs(y_true[valid_mask] - y_pred[valid_mask])
+                abs_errors.extend(abs_diff)
+                y_true_sum += np.sum(y_true[valid_mask])
+        
+        if y_true_sum > 0:
+            wmape = np.sum(abs_errors) / y_true_sum
+            score = wmape
+            # Auxiliary metrics
+            rmse = np.sqrt(np.mean(np.array(abs_errors)**2))
         else:
-             score = float('inf')
-             rmse = float('nan')
-             mape = float('nan')
+            score = float('inf')
+            wmape = float('inf')
+            rmse = float('nan')
         
-        return score, rmse, mape
+        return score, wmape, rmse
 
     except Exception as e:
         print(f"Failed for {params}: {e}")
+        import traceback
+        traceback.print_exc()
         return float('inf'), float('inf'), float('inf')
 
 def objective(trial, df, regressor_names):
@@ -122,18 +133,30 @@ def objective(trial, df, regressor_names):
         'regressor_mode': trial.suggest_categorical('regressor_mode', ['additive', 'multiplicative']),
     }
     
-    score, rmse, mape = evaluate_combination(params, df, regressor_names)
+    score, wmape, rmse = evaluate_combination(params, df, regressor_names)
     
     # Store additional metrics in trial
+    trial.set_user_attr("wmape", wmape)
     trial.set_user_attr("rmse", rmse)
-    trial.set_user_attr("mape", mape)
+    
+    print(f"Trial {trial.number}: Score (WMAPE)={score:.4f} | RMSE={rmse:.4f}")
+    print(f"  Params: {params}")
     
     return score 
 
 
 
 def tune_hyperparameters():
+    import torch
+    
     result = fetch_training_data(verbose=True)
+    
+    print(f"CUDA Available: {torch.cuda.is_available()}")
+    if torch.cuda.is_available():
+        print(f"GPU Device: {torch.cuda.get_device_name(0)}")
+    else:
+        print("WARNING: GPU not detected. Training will be slow on CPU!")
+        
     if result is None:
         print("Data fetching failed.")
         return
@@ -181,9 +204,9 @@ def tune_hyperparameters():
     
     for i, t in enumerate(top_trials):
         rmse_val = t.user_attrs.get('rmse', float('nan'))
-        mape_val = t.user_attrs.get('mape', float('nan'))
+        wmape_val = t.user_attrs.get('wmape', float('nan'))
         params_str = ", ".join([f"{k}: {v:.4f}" if isinstance(v, float) else f"{k}: {v}" for k, v in t.params.items()])
-        print(f"#{i+1:2}: Trial {t.number:2} - Score: {t.value:.4f} (RMSE: {rmse_val:.4f}, MAPE: {mape_val:.4f}) - Params: {{{params_str}}}")
+        print(f"#{i+1:2}: Trial {t.number:2} - WMAPE: {wmape_val:.4f} (RMSE: {rmse_val:.4f}) - Params: {{{params_str}}}")
     
     if study.best_trial:
         print("----------------------------------------------------------------")

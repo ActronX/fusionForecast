@@ -2,11 +2,22 @@ import os
 import sys
 import pandas as pd
 import warnings
+import logging
+
+# Silence logs
+logging.getLogger("pytorch_lightning").setLevel(logging.ERROR)
+logging.getLogger("neuralprophet").setLevel(logging.ERROR)
+logging.getLogger("NP").setLevel(logging.ERROR)
 
 sys.path.append(os.getcwd())
 
 # Suppress common warnings for cleaner output
 warnings.filterwarnings("ignore", category=DeprecationWarning)
+warnings.filterwarnings("ignore", category=FutureWarning)
+warnings.filterwarnings("ignore", category=pd.errors.PerformanceWarning)
+warnings.filterwarnings("ignore", message=".*DataFrameGroupBy.apply operated on the grouping columns.*")
+warnings.filterwarnings("ignore", message=".*DataFrame is highly fragmented.*")
+warnings.filterwarnings("ignore", message=".*Trying to infer the `batch_size`.*")
 
 import neuralprophet
 from neuralprophet import NeuralProphet
@@ -47,8 +58,10 @@ def train_model():
         seasonality_reg=p_settings.get('seasonality_reg', 0.0),
         ar_reg=p_settings.get('ar_reg', 0.0),
         # AutoRegressive architecture
+        # AutoRegressive architecture
         n_lags=p_settings.get('n_lags', 0),
         n_forecasts=p_settings.get('n_forecasts', 1),
+        # d_hidden/num_hidden_layers removed for v0.9.0 compatibility
         ar_layers=p_settings.get('ar_layers', []),
         accelerator=p_settings.get('accelerator', 'auto'),
         drop_missing=True
