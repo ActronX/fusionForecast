@@ -79,8 +79,8 @@ daily_seasonality = true          # Daily patterns
 seasonality_mode = "additive"    # Saisonal effect type
 growth = "off"                    # Disable trend
 
-learning_rate = null             # Enable NeuralProphet auto learning rate
-epochs = null                    # Enable NeuralProphet auto epochs
+# learning_rate = null             # Enable NeuralProphet auto learning rate
+# epochs = null                    # Enable NeuralProphet auto epochs
 batch_size = 2048                  # Batch size for training
 # Regularization (0.0 = no regularization)
 seasonality_reg = 0.005
@@ -96,7 +96,7 @@ ar_layers = [64, 32]     # Deep AR-Net: Two hidden layers [64, 32]
 [model.tuning]
 # Hyperparameter optimization settings (now uses Optuna)
 trials = 100             # Number of intelligent search trials
-process_count = 4       # Number of parallel CPU cores
+process_count = 1       # Number of parallel CPU cores
 night_threshold = 50    # Ignore values <= this during evaluation (Watts)
 # Note: Optuna now searches ranges automatically. 
 # You no longer need to define static grids here.
