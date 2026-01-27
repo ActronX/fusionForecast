@@ -19,6 +19,7 @@ logging.getLogger("NP").setLevel(logging.ERROR)
 optuna.logging.set_verbosity(optuna.logging.WARNING)
 import warnings
 # Suppress specific warnings
+warnings.filterwarnings("ignore", category=FutureWarning)
 warnings.filterwarnings("ignore", ".*Trying to infer the `batch_size`.*")
 warnings.filterwarnings("ignore", ".*DataFrameGroupBy.apply operated on the grouping columns.*")
 warnings.filterwarnings("ignore", ".*Series.view is deprecated.*")
@@ -26,6 +27,7 @@ warnings.filterwarnings("ignore", ".*Argument ``multivariate`` is an experimenta
 warnings.filterwarnings("ignore", ".*is deprecated, use `isinstance.*")
 warnings.filterwarnings("ignore", ".*Defined frequency .* is different than major frequency.*")
 warnings.filterwarnings("ignore", ".*You called .*but have no logger configured.*")
+warnings.filterwarnings("ignore", category=pd.errors.PerformanceWarning)
 
 
 
@@ -118,9 +120,10 @@ def evaluate_combination(params, df, regressor_names):
 
         if y_true_sum > 0:
             wmape = np.sum(abs_errors) / y_true_sum
-            score = wmape
             # Auxiliary metrics
             rmse = np.sqrt(np.mean(np.array(abs_errors)**2))
+            # Requested combined score formula
+            score = rmse * (1 + wmape)
         else:
             score = float('inf')
             wmape = float('inf')
@@ -157,11 +160,10 @@ def objective(trial, df, regressor_names):
     trial.set_user_attr("wmape", wmape)
     trial.set_user_attr("rmse", rmse)
     
-    print(f"Trial {trial.number}: Score (WMAPE)={score:.4f} | RMSE={rmse:.4f}")
+    print(f"Trial {trial.number}: Score={score:.4f} | WMAPE={wmape:.4f} | RMSE={rmse:.4f}")
     print(f"  Params: {params}")
     
     return score 
-
 
 
 def tune_hyperparameters():
@@ -231,11 +233,12 @@ def tune_hyperparameters():
         rmse_val = t.user_attrs.get('rmse', float('nan'))
         wmape_val = t.user_attrs.get('wmape', float('nan'))
         params_str = ", ".join([f"{k}: {v:.4f}" if isinstance(v, float) else f"{k}: {v}" for k, v in t.params.items()])
-        print(f"#{i+1:2}: Trial {t.number:2} - WMAPE: {wmape_val:.4f} (RMSE: {rmse_val:.4f}) - Params: {{{params_str}}}")
+        print(f"#{i+1:2}: Trial {t.number:2} - Score: {t.value:.4f} (WMAPE: {wmape_val:.4f}, RMSE: {rmse_val:.4f}) - Params: {{{params_str}}}")
     
     if study.best_trial:
         print("----------------------------------------------------------------")
         print(f"BEST PARAMETERS (Trial {study.best_trial.number})")
+        print(f"Best Score: {study.best_value:.4f}")
         print("----------------------------------------------------------------")
         for key, value in study.best_params.items():
             if isinstance(value, float):
