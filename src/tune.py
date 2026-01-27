@@ -7,8 +7,7 @@ import os
 import traceback
 import logging
 import optuna
-from functools import partial
-import multiprocessing
+
 
 # Ensure src can be imported
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
@@ -56,6 +55,7 @@ def evaluate_combination(params, df, regressor_names):
             ar_layers=settings['model']['neuralprophet'].get('ar_layers', []),
             trend_reg=params['trend_reg'],
             seasonality_reg=params['seasonality_reg'],
+            ar_reg=params.get('ar_reg', 0.0),
             collect_metrics=False,
             accelerator=settings['model']['neuralprophet'].get('accelerator', 'auto')
         )
@@ -116,6 +116,7 @@ def objective(trial, df, regressor_names):
         'epochs': trial.suggest_int('epochs', 20, 100),
         'trend_reg': trial.suggest_float('trend_reg', 0.0, 10.0),
         'seasonality_reg': trial.suggest_float('seasonality_reg', 0.0, 10.0),
+        'ar_reg': trial.suggest_float('ar_reg', 0.0, 10.0),
         'future_regressor_regularization': trial.suggest_float('future_regressor_regularization', 0.0, 10.0),
         'seasonality_mode': trial.suggest_categorical('seasonality_mode', ['additive', 'multiplicative']),
         'regressor_mode': trial.suggest_categorical('regressor_mode', ['additive', 'multiplicative']),
@@ -129,23 +130,7 @@ def objective(trial, df, regressor_names):
     
     return score 
 
-def logging_callback(study, trial, n_trials, counter, lock):
-    with lock:
-        counter.value += 1
-        current_step = counter.value
-    
-    # Extract metrics and parameters for clearer display
-    score = trial.value
-    rmse = trial.user_attrs.get('rmse', float('nan'))
-    mape = trial.user_attrs.get('mape', float('nan'))
-    params = trial.params
-    
-    # Format parameters into a concise string
-    params_str = ", ".join([f"{k}: {v:.4f}" if isinstance(v, float) else f"{k}: {v}" for k, v in params.items()])
-    
-    print(f"[{current_step}/{n_trials}] "
-          f"Score: {score:.4f} (RMSE: {rmse:.4f}, MAPE: {mape:.4f}) - "
-          f"Params: {{{params_str}}}")
+
 
 def tune_hyperparameters():
     result = fetch_training_data(verbose=True)
@@ -166,12 +151,8 @@ def tune_hyperparameters():
     
     print(f"Starting Optuna optimization with {n_trials} trials on {process_count} parallel cores...")
     
-    # Shared counter for parallel progress tracking
-    counter = multiprocessing.Value('i', 0)
-    lock = multiprocessing.Lock()
-
-    objective_with_args = partial(objective, df=df, regressor_names=regressor_names)
-    callback = partial(logging_callback, n_trials=n_trials, counter=counter, lock=lock)
+    # Shared counter for progress tracking (simplified for sequential)
+    # n_jobs=1 performs sequential execution
     
     study = optuna.create_study(
         direction='minimize',
@@ -179,11 +160,12 @@ def tune_hyperparameters():
     )
     
     try:
+        # Evaluate objective directly
         study.optimize(
-            objective_with_args, 
+            lambda trial: objective(trial, df, regressor_names), 
             n_trials=n_trials,
-            n_jobs=process_count,
-            callbacks=[callback]
+            n_jobs=1,  # Sequential execution
+            show_progress_bar=True
         )
     except KeyboardInterrupt:
         print("\nTuning interrupted by user.")
