@@ -71,14 +71,26 @@ produced_offset = "-30m" # Align production timestamps
 regressor_offset = "0m"  # Align weather timestamps
 forecast_offset = "0m"   # Shift output timestamps
 
-[model.prophet]
-# Prophet specific forecasting settings
+[model.neuralprophet]
+# NeuralProphet specific forecasting settings
 yearly_seasonality = false        # Enable annual cycles
+weekly_seasonality = false        # Weekly patterns
+daily_seasonality = true          # Daily patterns
 seasonality_mode = "additive"    # Saisonal effect type
-regressor_mode = "additive"      # Weather effect type
-changepoint_prior_scale = 0.001 # Trend flexibility
-seasonality_prior_scale = 1.0   # Seasonality influence strength
-regressor_prior_scale = 5.0     # Weather data influence strength
+# Architecture Optimization
+n_lags = 24                       # Autoregressive steps
+d_hidden = 16                     # Hidden layer dimension
+num_hidden_layers = 0             # Number of hidden layers
+ar_layers = []                    # Custom AR network
+growth = "off"                    # Disable trend
+
+learning_rate = 0.01             # Learning rate
+epochs = 40                      # Training epochs
+# Regularization (0.0 = no regularization)
+trend_reg = 0.0                  
+seasonality_reg = 0.0
+future_regressor_regularization = 0.0
+accelerator = "auto" # "cpu", "gpu", or "auto"
 
 [model.tuning]
 # Hyperparameter optimization settings (now uses Optuna)

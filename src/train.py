@@ -5,6 +5,8 @@ import sys
 print("DEBUG: Basic imports done")
 import pickle
 import logging
+import sys
+sys.path.append(os.getcwd())
 print("DEBUG: Standard lib imports done")
 
 # logging.getLogger('cmdstanpy').disabled = True # Not needed for NeuralProphet
@@ -21,6 +23,7 @@ import warnings
 
 
 print("DEBUG: Importing NeuralProphet...")
+import neuralprophet
 from neuralprophet import NeuralProphet
 print("DEBUG: NeuralProphet imported")
 print("DEBUG: Importing local modules...")
@@ -62,10 +65,11 @@ def train_model():
         seasonality_mode=p_settings.get('seasonality_mode', 'additive'),
         learning_rate=p_settings.get('learning_rate', 0.01),
         epochs=p_settings.get('epochs', 10),
+        # Network Architecture
+        n_lags=p_settings.get('n_lags', 0),
+        ar_layers=p_settings.get('ar_layers', []),
         # Regularization
         accelerator=p_settings.get('accelerator', 'auto'),
-        # n_lags=24,     # AR disabled due to stability issues (NaN loss)
-        # ar_layers=[64],
         drop_missing=True
     )
     
@@ -106,11 +110,32 @@ def train_model():
     # We'll try pickle for detailed state preservation.
     
     # Calculate and print model size before saving
-    model_size = len(pickle.dumps(model))
-    print(f"Model size before saving: {model_size / 1024 / 1024:.2f} MB")
+    # model_size = len(pickle.dumps(model))
+    # print(f"Model size before reduction: {model_size / 1024 / 1024:.2f} MB")
+
+    # --- Reduce Model Size ---
+    def strip_model(m):
+        """
+        Carefully remove detailed training state to reduce file size for inference.
+        """
+        # 1. Remove Optimizer State (safest, biggest gain usually)
+        if hasattr(m, 'trainer'):
+             print("DEBUG: Keeping trainer object (minimal mode used)")
+             # del m.trainer
+             pass
+             
+    strip_model(model)
     
-    with open(model_path, "wb") as f:
-        pickle.dump(model, f)
+    # Use NeuralProphet built-in save which is safer/smaller than raw pickle often
+    neuralprophet.save(model, model_path)
+    
+    # Check file size
+    size_mb = os.path.getsize(model_path) / 1024 / 1024
+    print(f"Model saved to {model_path}")
+    print(f"Model file size: {size_mb:.2f} MB")
+    
+    # with open(model_path, "wb") as f:
+    #     pickle.dump(model, f)
         
     print("Training complete.")
 

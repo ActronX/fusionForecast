@@ -2,10 +2,13 @@
 import os
 import pickle
 import pandas as pd
+import sys
+sys.path.append(os.getcwd())
 from src.config import settings
 from src.db import InfluxDBWrapper
 from src.preprocess import truncate_time_column, postprocess_forecast, prepare_prophet_dataframe
 # NeuralProphet import not strictly needed for loading pickle if class is available, but good practice
+import neuralprophet
 from neuralprophet import NeuralProphet 
 
 def run_forecast():
@@ -18,8 +21,20 @@ def run_forecast():
         return
         
     print(f"Loading model from {model_path}...")
-    with open(model_path, "rb") as f:
-        model = pickle.load(f)
+    # with open(model_path, "rb") as f:
+    #     model = pickle.load(f)
+    
+    import torch
+    # Fix for PyTorch 2.6+ weights_only=True default
+    # neuralprophet.load doesn't expose weights_only, so we use torch.load directly
+    print("Loading with torch.load(weights_only=False)...")
+    model = torch.load(model_path, weights_only=False)
+    # model = neuralprophet.load(model_path)
+    
+    # Needs to restore trainer for inference if it was stripped or not saved fully
+    if hasattr(model, 'restore_trainer'):
+        print("Restoring trainer...")
+        model.restore_trainer()
         
     # Check if model has n_lags enabled (AR model)
     n_lags = getattr(model, 'n_lags', 0)
