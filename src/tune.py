@@ -102,6 +102,20 @@ def evaluate_combination(params, df, regressor_names):
                 abs_errors.extend(abs_diff)
                 y_true_sum += np.sum(y_true[valid_mask])
         
+        # DEBUG: Print statistics if we have issues
+        if y_true_sum == 0 or not abs_errors:
+            print(f"DEBUG: Validation failed. y_true_sum={y_true_sum}, len(abs_errors)={len(abs_errors)}")
+            # Check a few things
+            total_rows = len(forecast)
+            nan_preds = forecast[yhat_cols].isna().sum().sum()
+            above_threshold = (forecast['y'] > threshold).sum()
+            print(f"  Total Rows: {total_rows}")
+            print(f"  NaN Predictions: {nan_preds}")
+            print(f"  Points > Threshold ({threshold}): {above_threshold}")
+            if total_rows > 0:
+                 print(f"  Sample Y: {forecast['y'].head().tolist()}")
+                 print(f"  Sample Pred: {forecast[yhat_cols[0]].head().tolist()}")
+
         if y_true_sum > 0:
             wmape = np.sum(abs_errors) / y_true_sum
             score = wmape
@@ -121,15 +135,19 @@ def evaluate_combination(params, df, regressor_names):
         return float('inf'), float('inf'), float('inf')
 
 def objective(trial, df, regressor_names):
-    # Suggest parameters for NeuralProphet
+    # Suggest parameters for NeuralProphet based on known working values
     params = {
-        'learning_rate': trial.suggest_float('learning_rate', 0.001, 0.1, log=True),
-        'epochs': trial.suggest_int('epochs', 20, 100),
-        'trend_reg': trial.suggest_float('trend_reg', 0.0, 10.0),
-        'seasonality_reg': trial.suggest_float('seasonality_reg', 0.0, 10.0),
-        'ar_reg': trial.suggest_float('ar_reg', 0.0, 10.0),
-        'future_regressor_regularization': trial.suggest_float('future_regressor_regularization', 0.0, 10.0),
-        'seasonality_mode': trial.suggest_categorical('seasonality_mode', ['additive', 'multiplicative']),
+        # LR around 0.001 (e.g. 0.0001 to 0.01)
+        'learning_rate': trial.suggest_float('learning_rate', 0.0001, 0.01, log=True),
+        # Epochs around 40 (e.g. 20-60)
+        'epochs': trial.suggest_int('epochs', 20, 60),
+        # Regularization: focused on small values around 0.01
+        'trend_reg': trial.suggest_float('trend_reg', 0.0, 0.1),
+        'seasonality_reg': trial.suggest_float('seasonality_reg', 0.0, 0.1),
+        'ar_reg': trial.suggest_float('ar_reg', 0.0, 0.1),
+        'future_regressor_regularization': trial.suggest_float('future_regressor_regularization', 0.0, 0.1),
+        # Modes: stick to what likely works (additive often better for PV if data standardized)
+        'seasonality_mode': trial.suggest_categorical('seasonality_mode', ['additive']), 
         'regressor_mode': trial.suggest_categorical('regressor_mode', ['additive', 'multiplicative']),
     }
     
@@ -162,6 +180,13 @@ def tune_hyperparameters():
         return
     
     df, regressor_names = result
+    
+    # Ensure continuous time index and fill gaps with 0 (MATCHING TRAIN.PY LOGIC)
+    print("Preprocessing data (resample 15min, fillna 0)...")
+    df['ds'] = pd.to_datetime(df['ds'])
+    df = df.set_index('ds').resample('15min').mean()
+    df = df.fillna(0)
+    df = df.reset_index()
     
     # Validation
     training_days = settings['model']['training_days']
