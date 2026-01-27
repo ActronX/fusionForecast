@@ -73,12 +73,42 @@ Fine-tuning of data before it entering the ML model.
 - `produced_scale` / `regressor_scale`: Multipliers to normalize data (e.g., if your meter stores kW but you want Watts).
 - `produced_offset` / `regressor_offset`: Crucial for aligning timestamps (e.g., if one source is 1h ahead).
 
-#### 8. Prophet ML Engine `[model.prophet]`
-Specific settings for the Facebook Prophet model.
+#### 8. NeuralProphet ML Engine `[model.neuralprophet]`
+Specific settings for the NeuralProphet model (PyTorch-based deep learning framework).
 
-- `changepoint_prior_scale`: Controls trend flexibility. Lower = smoother, Higher = more reactive to changes.
-- `seasonality_prior_scale`: Intensity of yearly/daily cycles.
-- `regressor_prior_scale`: How much the model trusts the weather forecast vs. its internal patterns.
+**Seasonality Settings:**
+- `yearly_seasonality`: Enable annual cycles (default: `false` for PV, as daily patterns dominate).
+- `weekly_seasonality`: Enable weekly patterns (default: `false`, less relevant for solar).
+- `daily_seasonality`: Enable daily patterns (default: `true`, **critical for PV systems**).
+- `seasonality_mode`: How seasonal effects combine - `"additive"` or `"multiplicative"` (default: `"additive"`).
+- `growth`: Trend component - `"linear"`, `"off"`, or `"discontinuous"` (default: `"off"` for stationary PV data).
+
+**Training Parameters:**
+- `learning_rate`: Step size for gradient descent optimizer (default: `0.001`).
+- `epochs`: Number of training iterations through the dataset (default: `40`).
+- `batch_size`: Number of samples per training batch (default: `128`).
+
+**Regularization (Overfitting Prevention):**
+- `trend_reg`: L2 penalty for trend component (default: `0.01`).
+- `seasonality_reg`: L2 penalty for seasonality (default: `0.01`).
+- `ar_reg`: L2 penalty for AutoRegressive lags (default: `0.0`).
+- `future_regressor_regularization`: L2 penalty for weather regressors (default: `0.01`).
+- `regressor_mode`: How regressors combine with base forecast - `"additive"` or `"multiplicative"` (default: `"additive"`).
+
+**Hardware Acceleration:**
+- `accelerator`: Compute device - `"cpu"`, `"gpu"`, or `"auto"` (default: `"gpu"` for CUDA-enabled systems).
+
+**AutoRegressive (AR) Configuration:**
+These parameters enable multi-step forecasting with historical context:
+- `n_lags`: Number of historical time steps to use as input (default: `96` = 24 hours at 15-min intervals).
+  - **How it works**: The model looks back at the last `n_lags` actual production values to inform predictions.
+  - **Example**: With `n_lags=96`, the model uses the past 24 hours of production history.
+- `n_forecasts`: Number of future steps to predict simultaneously (default: `96` = 24 hours).
+  - **Multi-step prediction**: Instead of predicting one step at a time, the model generates all 96 future values in one forward pass.
+- `ar_layers`: Hidden layer configuration for AR network (default: `[]` = linear AR, no hidden layers).
+  - **Empty list** means simpler, faster linear relationships.
+- `num_hidden_layers`: Global model depth (default: `0` = linear model).
+- `d_hidden`: Hidden layer dimension (default: `16`, unused when `num_hidden_layers=0`).
 
 
 
@@ -112,7 +142,7 @@ Before training the model, you must fetch historical weather data for your locat
 
 ### 3. Train Model
 
-The training script loads historical data, trains the Prophet model, and saves it locally as a `.pkl` file.
+The training script loads historical data, trains the NeuralProphet model, and saves it locally as a `.pkl` file.
 
 **Start:**
 - Windows: `train.bat` or `python -m src.train`
@@ -215,8 +245,8 @@ The tuning script evaluates model performance using Cross-Validation and calcula
 Here is a detailed description of the Python scripts located in `src/`:
 
 ### Core Pipeline
-- **`src/train.py`**: Trains the **Production** (PV) model. Fetches historical production and regressor data, trains Prophet, and saves `prophet_model.pkl`.
-- **`src/forecast.py`**: Generates **Production** forecasts. Loads the model, fetches future weather data, predicts generation, and writes to InfluxDB.
+- **`src/train.py`**: Trains the **Production** (PV) model. Fetches historical production and regressor data, trains NeuralProphet with AR mode, and saves `prophet_model.pkl`.
+- **`src/forecast.py`**: Generates **Production** forecasts using multi-step prediction. Loads the model, fetches future weather data and historical context (for AR mode), predicts generation in 24-hour chunks, and writes to InfluxDB.
 - **`src/nowcast.py`**: **Real-Time Correction**. Adjusts the forecast based on the last 3 hours of actual production to react to immediate weather changes (e.g., fog).
 
 ### Data Fetching & Calculations
@@ -226,7 +256,7 @@ Here is a detailed description of the Python scripts located in `src/`:
 
 ### Utilities & Maintenance
 
-- **`src/tune.py`**: Performs **Hyperparameter Tuning** using a grid search to find the optimal Prophet parameters (e.g., `changepoint_prior_scale`) for your specific data.
+- **`src/tune.py`**: Performs **Hyperparameter Tuning** using a grid search (via Optuna) to find the optimal NeuralProphet parameters (e.g., `learning_rate`) for your specific data.
 
 - **`src/plot_model.py`**: Generates interactive Plotly charts of the model components (trend, seasonality) for visual inspection.
 
@@ -241,13 +271,14 @@ This section describes which data is read from and written to InfluxDB, and why 
 - **Reads**:
     - **Production History** (`buckets.history_produced`): Actual historical PV generation data.
     - **Regressor History** (`buckets.regressor_history`): Historical weather data (e.g., solar irradiance) corresponding to the production history.
-- **Why**: The Prophet model needs to learn the relationship between the target variable (Production) and time/weather. For example, it learns that "high irradiance = high production".
+- **Why**: The NeuralProphet model needs to learn the relationship between the target variable (Production) and time/weather. With AR mode enabled (`n_lags > 0`), it also learns to use recent production patterns to improve short-term accuracy.
 
 ### 2. Forecasting (Prediction)
 *Scripts: `src/forecast.py`*
 
 - **Reads**:
     - **Future Regressor** (`buckets.regressor_future`): The current weather forecast for the next few days.
+    - **Historical Context** (`buckets.live` or `buckets.history_produced`): Recent production data (last 24 hours) when AR mode is enabled.
 - **Writes**:
     - **Target Forecast** (`buckets.target_forecast`): The predicted values for production.
 - **Why**: To make a prediction for tomorrow, the model needs to know the expected weather (Regressor). The result is then stored so it can be visualized in Grafana or used by an energy management system (e.g., to charge a battery).

@@ -206,7 +206,7 @@ docker-compose up -d
 
 Docker volumes ensure your data survives container restarts:
 - **influxdb-data**: All InfluxDB measurements and forecasts.
-- **./models**: Trained Prophet models (mounted from host).
+- **./models**: Trained NeuralProphet models (mounted from host).
 - **./logs**: Application logs (mounted from host).
 
 ### Automated Updates
@@ -222,8 +222,8 @@ The container automatically:
 Here is a detailed description of the Python scripts located in `src/`:
 
 ### Core Pipeline
-- **`src/train.py`**: Trains the **Production** (PV) model. Fetches historical production and regressor data, trains Prophet, and saves `prophet_model.pkl`.
-- **`src/forecast.py`**: Generates **Production** forecasts. Loads the model, fetches future weather data, predicts generation, and writes to InfluxDB.
+- **`src/train.py`**: Trains the **Production** (PV) model. Fetches historical production and regressor data, trains NeuralProphet, and saves `prophet_model.pkl`.
+- **`src/forecast.py`**: Generates **Production** forecasts using multi-step prediction. Loads the model, fetches future weather data, predicts generation using AutoRegressive (AR) mode with historical context, and writes to InfluxDB.
 - **`src/nowcast.py`**: **Real-Time Correction**. Adjusts the forecast based on the last 3 hours of actual production to react to immediate weather changes (e.g., fog).
 
 ### Data Fetching & Calculations
@@ -248,7 +248,7 @@ This section describes which data is read from and written to InfluxDB, and why 
 - **Reads**:
     - **Production History** (`buckets.history_produced`): Actual historical PV generation data.
     - **Regressor History** (`buckets.regressor_history`): Historical weather data (e.g., solar irradiance) corresponding to the production history.
-- **Why**: The NeuralProphet model needs to learn the relationship between the target variable (Production) and time/weather. For example, it learns that "high irradiance = high production".
+- **Why**: The NeuralProphet model needs to learn the relationship between the target variable (Production) and time/weather. The model uses AutoRegressive (AR) mode with `n_lags` to incorporate recent historical patterns for more accurate predictions.
 
 ### 2. Forecasting (Prediction)
 *Scripts: `src/forecast.py`*

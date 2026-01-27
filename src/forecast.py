@@ -3,8 +3,17 @@ import sys
 import pandas as pd
 import numpy as np
 import torch
+import warnings
 
 sys.path.append(os.getcwd())
+
+# Suppress warnings for cleaner output
+warnings.filterwarnings("ignore", category=DeprecationWarning)
+warnings.filterwarnings("ignore", category=FutureWarning)
+warnings.filterwarnings("ignore", category=pd.errors.PerformanceWarning)
+warnings.filterwarnings("ignore", message=".*DataFrameGroupBy.apply operated on the grouping columns.*")
+warnings.filterwarnings("ignore", message=".*DataFrame is highly fragmented.*")
+warnings.filterwarnings("ignore", message=".*Trying to infer the `batch_size`.*")
 
 import neuralprophet
 from neuralprophet import NeuralProphet

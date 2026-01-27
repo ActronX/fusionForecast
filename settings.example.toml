@@ -77,20 +77,25 @@ yearly_seasonality = false        # Enable annual cycles
 weekly_seasonality = false        # Weekly patterns
 daily_seasonality = true          # Daily patterns
 seasonality_mode = "additive"    # Saisonal effect type
-# Architecture Optimization
-n_lags = 24                       # Autoregressive steps
-d_hidden = 16                     # Hidden layer dimension
-num_hidden_layers = 0             # Number of hidden layers
-ar_layers = []                    # Custom AR network
 growth = "off"                    # Disable trend
 
 learning_rate = 0.01             # Learning rate
 epochs = 40                      # Training epochs
+batch_size = 128                  # Batch size for training
 # Regularization (0.0 = no regularization)
-trend_reg = 0.0                  
+trend_reg = 0.0
 seasonality_reg = 0.0
+ar_reg = 0.0                      # AutoRegressive regularization
 future_regressor_regularization = 0.0
+regressor_mode = "additive"       # Regressor mode: "additive" or "multiplicative"
 accelerator = "auto" # "cpu", "gpu", or "auto"
+
+# Network Architecture (Linear AR Configuration)
+n_lags = 24                       # Autoregressive steps (24 = 6 hours at 15min intervals)
+n_forecasts = 96                  # Predict 24 hours at once (96 * 15min)
+ar_layers = []                    # Custom AR network (empty = linear)
+num_hidden_layers = 0             # Number of hidden layers
+d_hidden = 16                     # Hidden layer dimension
 
 [model.tuning]
 # Hyperparameter optimization settings (now uses Optuna)
