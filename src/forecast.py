@@ -297,7 +297,7 @@ def run_forecast():
     forecast_to_write = forecast[['ds', 'yhat']].copy()
     
     # Apply night threshold filter
-    threshold = settings['model'].get('tuning', {}).get('night_threshold', 50)
+    threshold = settings['model'].get('preprocessing', {}).get('night_threshold', 50)
     forecast_to_write.loc[forecast_to_write['yhat'] <= threshold, 'yhat'] = 0
     
     # Write forecast to InfluxDB

@@ -44,7 +44,6 @@ regressor_future     = ["global_tilted_irradiance", "temperature_2m", "clearsky_
 
 [weather.open_meteo.historic]
 # Historic Data Fetch Settings
-url = "https://historical-forecast-api.open-meteo.com/v1/forecast" # History API endpoint
 start_date = "2024-01-01" # Start date for training history (YYYY-MM-DD)
 end_date = "today"        # End date for training history
 models = "best_match"      # Weather model selection
@@ -52,7 +51,6 @@ minutely_15 = ["global_tilted_irradiance_instant", "diffuse_radiation", "direct_
 
 [weather.open_meteo.forecast]
 # Future Forecast Fetch Settings
-url = "https://api.open-meteo.com/v1/forecast" # Forecast API endpoint
 forecast_days = 14                             # Number of days to predict
 models = "best_match"                          # Model selection
 minutely_15 = ["global_tilted_irradiance_instant", "diffuse_radiation", "direct_normal_irradiance"] # 15min resolution variable
@@ -71,6 +69,7 @@ regressor_scale = 1.0 # Multiplier for weather data
 produced_offset = "-30m" # Align production timestamps
 regressor_offset = "0m"  # Align weather timestamps
 forecast_offset = "0m"   # Shift output timestamps
+night_threshold = 50     # Ignore values <= this (Watts)
 
 [model.neuralprophet]
 # NeuralProphet specific forecasting settings
@@ -82,7 +81,7 @@ growth = "off"                    # Disable trend
 
 # learning_rate = null             # Enable NeuralProphet auto learning rate
 # epochs = null                    # Enable NeuralProphet auto epochs
-batch_size = 512                  # Batch size for training
+batch_size = 256                  # Batch size for training
 # Regularization (0.0 = no regularization)
 seasonality_reg = 0.0
 ar_reg = 0.0                      # AutoRegressive regularization
@@ -92,15 +91,9 @@ accelerator = "auto" # "cpu", "gpu", or "auto"
 # Network Architecture (Deep Learning Configuration)
 n_lags = 288              # 72 hours context (288 * 15min = 3 days) for weather pattern recognition
 n_forecasts = 96         # Predict 24 hours at once (96 * 15min)
-ar_layers = [128, 64]     # Deep AR-Net: Two hidden layers [128, 64]
+ar_layers = [32, 16]     # Deep AR-Net: Two hidden layers [32, 16]
 
-[model.tuning]
-# Hyperparameter optimization settings (now uses Optuna)
-trials = 100             # Number of intelligent search trials
-process_count = 1       # Number of parallel CPU cores
-night_threshold = 50    # Ignore values <= this during evaluation (Watts)
-# Note: Optuna now searches ranges automatically. 
-# You no longer need to define static grids here.
+
 
 [nowcast]
 # Real-time adjustment (damping factor) settings

@@ -136,8 +136,8 @@ def run_nowcast():
         
         now_ts = now_dt.timestamp()
         
-        # Get night threshold from settings (model.tuning.night_threshold)
-        night_threshold = settings['model'].get('tuning', {}).get('night_threshold', 50)
+        # Get night threshold from settings (model.preprocessing.night_threshold)
+        night_threshold = settings['model'].get('preprocessing', {}).get('night_threshold', 50)
         
         print("Calculating damping factor...")
         

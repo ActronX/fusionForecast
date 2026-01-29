@@ -24,7 +24,7 @@ def main():
     station_settings = settings['station']
     om_historic = settings['weather']['open_meteo']['historic']
     
-    url = om_historic.get('url', "https://historical-forecast-api.open-meteo.com/v1/forecast")
+    url = "https://historical-forecast-api.open-meteo.com/v1/forecast"
     
     end_date = om_historic['end_date']
     if end_date.lower() == "today":

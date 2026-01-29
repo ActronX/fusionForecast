@@ -23,7 +23,7 @@ def main():
     station_settings = settings['station']
     om_forecast = settings['weather']['open_meteo']['forecast']
     
-    url = om_forecast.get('url', "https://api.open-meteo.com/v1/forecast")
+    url = "https://api.open-meteo.com/v1/forecast"
     params = {
         "latitude": station_settings['latitude'],
         "longitude": station_settings['longitude'],
