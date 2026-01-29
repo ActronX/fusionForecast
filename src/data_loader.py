@@ -70,7 +70,12 @@ def fetch_training_data(verbose: bool = True):
     regressor_offset = settings['model']['preprocessing'].get('regressor_offset', '0m')
     regressor_scale = settings['model']['preprocessing'].get('regressor_scale', 1.0)
     
-    regressor_fields = [settings['influxdb']['fields']['regressor_history']]
+    # Handle list or string for compatibility
+    reg_config = settings['influxdb']['fields']['regressor_history']
+    if isinstance(reg_config, list):
+        regressor_fields = reg_config
+    else:
+        regressor_fields = [reg_config]
     
     if verbose:
         print(f"Using regressor fields: {regressor_fields}")
@@ -102,9 +107,12 @@ def fetch_training_data(verbose: bool = True):
     # Interpolate regressor fields
     regressor_names = []
     for field in regressor_fields:
-        reg_name = field
-        df_regressor[reg_name] = df_regressor[reg_name].interpolate(method='linear', limit_direction='both')
-        regressor_names.append(reg_name)
+        if field not in df_regressor.columns:
+            print(f"Warning: Regressor field '{field}' missing in fetched data. Filling with 0.")
+            df_regressor[field] = 0.0
+            
+        df_regressor[field] = df_regressor[field].interpolate(method='linear', limit_direction='both')
+        regressor_names.append(field)
 
     # 3. Merge on 'ds'
     df_prophet = pd.merge(df_prophet, df_regressor[['ds'] + regressor_names], on='ds', how='inner')

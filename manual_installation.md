@@ -32,6 +32,7 @@ Defines the physical characteristics and location of your PV system. This is cru
 - `tilt`: The angle of your panels relative to the horizontal (0° = flat, 90° = vertical).
 - `azimuth`: Orientation of the panels. 
     - **Note**: FusionForecast uses Open-Meteo convention: `0` = South, `-90` = East, `90` = West, `180` = North.
+- `altitude`: Station altitude in meters.
 
 #### 2. InfluxDB Connection `[influxdb]`
 Connection details for your InfluxDB v2 instance.
@@ -60,7 +61,7 @@ Individual field names within the measurements. **Every field is cross-reference
 Configures how weather data is fetched from the Open-Meteo API.
 - `historic` / `forecast`: Separate endpoints for training history and future predictions.
 - `models`: Selection of the weather model (e.g., `best_match`, `icon_d2`).
-- `minutely_15`: The specific variable to fetch (default: `global_tilted_irradiance_instant`).
+- `minutely_15`: The specific variable to fetch (default: `diffuse_radiation`, `direct_normal_irradiance`).
 
 #### 6. Model Parameters `[model]`
 - `path`: File path for the trained Prophet model (`.pkl`).
@@ -250,13 +251,13 @@ Here is a detailed description of the Python scripts located in `src/`:
 - **`src/nowcast.py`**: **Real-Time Correction**. Adjusts the forecast based on the last 3 hours of actual production to react to immediate weather changes (e.g., fog).
 
 ### Data Fetching & Calculations
-- **`src/fetch_future_weather.py`**: Fetches **current** weather forecasts from Open-Meteo. If `use_pvlib` is enabled, it automatically triggers the consolidated calculation.
-- **`src/fetch_historic_weather.py`**: Fetches **historical** weather data. If `use_pvlib` is enabled, it automatically triggers the consolidated calculation.
-- **`src/calc_effective_irradiance.py`**: **Consolidated Physics Model**. Calculates Plane of Array (POA) irradiance, applies Incidence Angle Modifier (IAM) losses, and computes the SAPM cell temperature.
+- **`src/fetch_future_weather.py`**: Fetches **current** weather forecasts from Open-Meteo. Uses `weather_utils.py` to calculate effective irradiance (GTI) and clearsky GHI.
+- **`src/fetch_historic_weather.py`**: Fetches **historical** weather data from Open-Meteo. Uses `weather_utils.py` to calculate effective irradiance (GTI) and clearsky GHI.
+- **`src/weather_utils.py`**: **Consolidated Physics Model**. Shared utility that handles `pvlib` calculations for solar position, plane of array (POA) irradiance, and clearsky GHI.
 
 ### Utilities & Maintenance
 
-- **`src/tune.py`**: Performs **Hyperparameter Tuning** using a grid search (via Optuna) to find the optimal NeuralProphet parameters (e.g., `learning_rate`) for your specific data.
+- **`src/tune.py`**: Performs **Hyperparameter Tuning** using **Optuna** to find the optimal NeuralProphet parameters (e.g., `learning_rate`, `epochs`) for your specific data.
 
 - **`src/plot_model.py`**: Generates interactive Plotly charts of the model components (trend, seasonality) for visual inspection.
 

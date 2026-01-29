@@ -12,4 +12,5 @@ openmeteo-requests
 requests-cache
 retry-requests
 optuna
+pvlib
 

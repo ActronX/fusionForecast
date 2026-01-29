@@ -1,16 +1,15 @@
 
 import os
-import pickle
+import torch 
 import pandas as pd
-from neuralprophet import NeuralProphet
-import plotly.graph_objs as go
 from src.config import settings
 from src.db import InfluxDBWrapper
-import time
+import plotly.graph_objs as go
 import webbrowser
+import time
 
 def plot_model():
-    print("Starting plotting pipeline... (NeuralProphet)")
+    print("Starting robust plotting pipeline... (NeuralProphet)")
     
     # 1. Load Model
     model_path = settings['model']['path']
@@ -19,95 +18,42 @@ def plot_model():
         return
 
     print(f"Loading model from {model_path}...")
-    with open(model_path, "rb") as f:
-        model = pickle.load(f)
+    model = torch.load(model_path, weights_only=False)
+    if hasattr(model, 'restore_trainer'):
+        model.restore_trainer()
 
-    # 2. Setup Dataframe for Plotting
-    # Unlike Prophet, NeuralProphet model object doesn't cache history.
-    # We need to feed it history + future to plot the full context.
-    
+    # 2. Configuration & Data Fetching
     db = InfluxDBWrapper()
     
-    # Range: History (training_days) + Future (forecast_days)
-    training_days = settings['model']['training_days']
-    forecast_days = settings['model']['forecast_days']
+    training_days = settings['model']['training_days'] 
     
-    print(f"Fetching data for plotting (History: {training_days}d + Future: {forecast_days}d)...")
+    # User Request: 14 days history, 7 days future
+    plot_history_days = 14 
+    forecast_days = 7 # Override setting for plotting view
     
-    range_start = f"-{training_days + 1}d"
-    range_stop = f"{forecast_days + 1}d" # Relative to now
+    # ... (rest of configuration)
     
-    # We reuse the logic from plot_model original: fetch regressors history & future.
-    # But we ALSO need 'y' (target) history to show actuals.
-    # Let's fetch Regressors first.
+    # ... (fetching logic uses plot_history_days and forecast_days, so skipping edit there if variable names match)
+    
+    # Note: I need to ensure the variables `plot_history_days` and `forecast_days` are used in fetching queries.
+    # In my previous write_to_file, I used `forecast_days = settings...`. I will overwrite lines 28-30
+
+    
+    reg_config = settings['influxdb']['fields']['regressor_history']
+    regressor_fields = reg_config if isinstance(reg_config, list) else [reg_config]
     
     regressor_scale = settings['model']['preprocessing'].get('regressor_scale', 1.0)
-    # Get regressor names from model configuration or settings?
-    # NeuralProphet model doesn't easily expose regressor names in a simple list always, but we can look at specs.
-    # Safe bet: use user settings.
-    # wait, forecast code relies on 'influxdb.fields.regressor_future'.
-    # train code iterates 'regressor_names'.
-    # We should iterate all potential regressors. 
-    # Let's assume the user config is the source of truth.
-    regressor_fields = [settings['influxdb']['fields']['regressor_history']] 
-    # If there are sub-regressors (e.g. cloud cover), we need those too.
-    # This logic was not fully explicit in original plot_model, it just listed model.extra_regressors.
-    # We will try to inspect the model for regressors if possible.
-    
-    # Inspect model for regressors
-    model_regressors = []
-    if hasattr(model, 'future_regressors') and model.future_regressors:
-        model_regressors = list(model.future_regressors.keys())
-    
-    print(f"Model uses regressors: {model_regressors}")
-    
-    regressor_filter = " or ".join([f'r["_field"] == "{f}"' for f in model_regressors]) if model_regressors else "r[\"_field\"] == \"none\""
-    
-    # Fetch Regressors (History + Future)
-    # We can do one query or two. Let's do two to be safe with buckets.
-    
-    dfs_to_concat = []
-    
-    if model_regressors:
-        # History Regressors
-        query_hist_reg = f'''
-        from(bucket: "{settings['influxdb']['buckets']['regressor_history']}")
-          |> range(start: {range_start})
-          |> filter(fn: (r) => r["_measurement"] == "{settings['influxdb']['measurements']['regressor_history']}")
-          |> filter(fn: (r) => {regressor_filter})
-          |> map(fn: (r) => ({{ r with _value: r._value * {regressor_scale} }}))
-          |> pivot(rowKey:["_time"], columnKey: ["_field"], valueColumn: "_value")
-        '''
-        df_hist_reg = db.query_dataframe(query_hist_reg)
-        if not df_hist_reg.empty:
-            df_hist_reg['ds'] = pd.to_datetime(df_hist_reg['_time']).dt.tz_localize(None)
-            dfs_to_concat.append(df_hist_reg)
-
-        # Future Regressors
-        # We need these for the forecast part.
-        query_fcst_reg = f'''
-        from(bucket: "{settings['influxdb']['buckets']['regressor_future']}")
-          |> range(start: -1h, stop: {forecast_days}d) 
-          |> filter(fn: (r) => r["_measurement"] == "{settings['influxdb']['measurements']['regressor_future']}")
-          |> filter(fn: (r) => {regressor_filter})
-          |> map(fn: (r) => ({{ r with _value: r._value * {regressor_scale} }}))
-          |> pivot(rowKey:["_time"], columnKey: ["_field"], valueColumn: "_value")
-        '''
-        df_fcst_reg = db.query_dataframe(query_fcst_reg)
-        if not df_fcst_reg.empty:
-            df_fcst_reg['ds'] = pd.to_datetime(df_fcst_reg['_time']).dt.tz_localize(None)
-            dfs_to_concat.append(df_fcst_reg)
-    
-    # Combine Regressors
-    if dfs_to_concat:
-        df_reg = pd.concat(dfs_to_concat).drop_duplicates(subset=['ds']).sort_values('ds')
-        df_reg = df_reg.set_index('ds')
-    else:
-        df_reg = pd.DataFrame()
-
-    # Now Fetch Target History (y)
-    print("Fetching target history...")
     produced_scale = settings['model']['preprocessing'].get('produced_scale', 1.0)
+    
+    print(f"Fetching data (History: {plot_history_days}d, Future: {forecast_days}d)...")
+
+    # A. Fetch History (Target + Regressors)
+    # We fetch enough history for the model to have context (n_lags) + the plot window.
+    # Safe buffer: plot_history_days + 5 days
+    range_start = f"-{plot_history_days + 5}d"
+    
+    # Fetch Target (Produced)
+    print("  - Fetching Target History...")
     query_target = f'''
     from(bucket: "{settings['influxdb']['buckets']['history_produced']}")
       |> range(start: {range_start})
@@ -119,169 +65,183 @@ def plot_model():
     df_result_target = db.query_dataframe(query_target)
     
     if df_result_target.empty:
-        print("Warning: No target history found.")
-        df_target = pd.DataFrame(columns=['ds', 'y'])
-    else:
-        df_result_target['ds'] = pd.to_datetime(df_result_target['_time']).dt.tz_localize(None)
-        # Rename target field to 'y'
-        target_field = settings['influxdb']['fields']['produced']
-        if target_field in df_result_target.columns:
-             df_result_target.rename(columns={target_field: 'y'}, inplace=True)
-        df_target = df_result_target[['ds', 'y']].set_index('ds')
+        print("Error: No target history found.")
+        return
 
-    # Merge Regressors and Target
-    # We want a continuous dataframe at 15min resolution usually.
-    # Start: min(target, regressor)
-    # End: max(target, regressor) + forecast_days
+    df_result_target['ds'] = pd.to_datetime(df_result_target['_time']).dt.tz_localize(None)
+    target_col = settings['influxdb']['fields']['produced']
+    if target_col in df_result_target.columns:
+         df_result_target.rename(columns={target_col: 'y'}, inplace=True)
+    df_hist = df_result_target[['ds', 'y']].copy()
+
+    # Fetch Regressors History
+    print(f"  - Fetching Regressors History ({len(regressor_fields)} fields)...")
+    regressor_filter = " or ".join([f'r["_field"] == "{f}"' for f in regressor_fields])
     
-    # To simplify, we reindex everything to a global timeline
-    if not df_target.empty:
-        start_date = df_target.index.min()
-    elif not df_reg.empty:
-        start_date = df_reg.index.min()
-    else:
-        start_date = pd.Timestamp.now() - pd.Timedelta(days=1)
+    query_hist_reg = f'''
+    from(bucket: "{settings['influxdb']['buckets']['regressor_history']}")
+      |> range(start: {range_start})
+      |> filter(fn: (r) => r["_measurement"] == "{settings['influxdb']['measurements']['regressor_history']}")
+      |> filter(fn: (r) => {regressor_filter})
+      |> map(fn: (r) => ({{ r with _value: r._value * {regressor_scale} }}))
+      |> pivot(rowKey:["_time"], columnKey: ["_field"], valueColumn: "_value")
+    '''
+    df_hist_reg = db.query_dataframe(query_hist_reg)
+    
+    if not df_hist_reg.empty:
+        df_hist_reg['ds'] = pd.to_datetime(df_hist_reg['_time']).dt.tz_localize(None)
+        # Drop non-numeric and _time
+        cols_to_keep = ['ds'] + [c for c in df_hist_reg.columns if c in regressor_fields]
+        df_hist_reg = df_hist_reg[cols_to_keep]
         
-    end_date = pd.Timestamp.now() + pd.Timedelta(days=forecast_days)
+        # Merge into df_hist
+        df_hist = pd.merge(df_hist, df_hist_reg, on='ds', how='outer') # Outer to keep all timestamps
     
-    full_index = pd.date_range(start=start_date, end=end_date, freq='30min') # Or 15min? train uses 15min.
-    # Let's use 15min to match training frequency.
-    
-    df_combined = pd.DataFrame(index=full_index)
-    df_combined.index.name = 'ds'
-    df_combined = df_combined.reset_index()
-    
-    # Merge Target
-    if not df_target.empty:
-        df_combined = pd.merge_asof(
-            df_combined.sort_values('ds'), 
-            df_target.reset_index().sort_values('ds'), 
-            on='ds', 
-            direction='nearest', 
-            tolerance=pd.Timedelta('14min')
-        )
-    else:
-        df_combined['y'] = None
+    # Sort and fill
+    df_hist = df_hist.sort_values('ds').reset_index(drop=True)
+    df_hist = df_hist.fillna(0) # Simple fill for plotting gaps
 
-    # Merge Regressors
-    if not df_reg.empty:
-        # We need to act carefully, maybe interpolation is better.
-        df_reg_resampled = df_reg.reindex(full_index).interpolate(method='time')
-        df_reg_resampled.index.name = 'ds'
-        df_combined = pd.merge(df_combined, df_reg_resampled.reset_index(), on='ds', how='left')
+    # B. Fetch Future Regressors
+    print("  - Fetching Future Regressors...")
+    query_fcst_reg = f'''
+    from(bucket: "{settings['influxdb']['buckets']['regressor_future']}")
+      |> range(start: -1h, stop: {forecast_days}d) 
+      |> filter(fn: (r) => r["_measurement"] == "{settings['influxdb']['measurements']['regressor_future']}")
+      |> filter(fn: (r) => {regressor_filter})
+      |> map(fn: (r) => ({{ r with _value: r._value * {regressor_scale} }}))
+      |> pivot(rowKey:["_time"], columnKey: ["_field"], valueColumn: "_value")
+    '''
+    df_fcst_reg = db.query_dataframe(query_fcst_reg)
+    
+    if df_fcst_reg.empty:
+        print("Error: No future regressors found.")
+        return
         
-    # Fill NAs in Regressors (Linear Interpolation for gaps)
-    for reg in model_regressors:
-        if reg in df_combined.columns:
-            df_combined[reg] = df_combined[reg].interpolate(limit_direction='both')
-            df_combined[reg] = df_combined[reg].fillna(0) # Logic from before
-        else:
-            df_combined[reg] = 0.0
-
-    print("Generating forecast...")
-    # Make prediction
-    forecast = model.predict(df_combined)
+    df_fcst_reg['ds'] = pd.to_datetime(df_fcst_reg['_time']).dt.tz_localize(None)
+    cols_to_keep_fut = ['ds'] + [c for c in df_fcst_reg.columns if c in regressor_fields]
+    df_future_regressors = df_fcst_reg[cols_to_keep_fut].sort_values('ds')
     
-    # Rename yhat1 -> yhat if needed
-    if 'yhat1' in forecast.columns:
-        forecast.rename(columns={'yhat1': 'yhat'}, inplace=True)
-
-    # 4. Plot
-    print("Creating improved interactive plots...")
+    # Interpolate Future Regressors to ensure no gaps for make_future_dataframe
+    df_future_regressors = df_future_regressors.set_index('ds').resample('15min').interpolate(method='linear').reset_index()
     
-    # Define zoom range: Last 30 days + Future
-    last_date = forecast['ds'].max()
-    start_zoom = last_date - pd.Timedelta(days=30)
     
-    # --- Plot 1: Main Overview (Zoomed) ---
-    # Use NeuralProphet built-in plot if available?
-    # model.plot(forecast) returns a plotly Figure if backend=plotly
+    # 3. Construct Prediction Dataframe
+    print("Constructing prediction dataframe...")
+    
+    # clean df_hist to have 15 min freq
+    df_hist = df_hist.set_index('ds').resample('15min').mean().interpolate().reset_index()
+    
+    # Create the future dataframe using NeuralProphet's method
+    # This automatically handles extending ‘ds’ and appending regressors if provided correctly
+    # But for 'regressors_df', NP expects a dataframe with 'ds' and regressor columns covering the FUTURE period.
+    
+    # Ensure df_future_regressors covers the period after df_hist
+    last_hist_date = df_hist['ds'].max()
+    df_future_regressors = df_future_regressors[df_future_regressors['ds'] > last_hist_date]
+    
+    # We allow 'periods' to be controlled by the available future regressor data
+    # (or strictly forecast_days * 96)
+    periods = len(df_future_regressors)
+    print(f"Predicting {periods} steps into future...")
+    
     try:
+        future = model.make_future_dataframe(
+            df=df_hist, 
+            regressors_df=df_future_regressors,
+            periods=periods,
+            n_historic_predictions=True # We want to plot history too
+        )
+        
+        print(f"Prediction dataframe ready. Shape: {future.shape}")
+        
+        # 4. Predict
+        # Try with decomposition first to get full components
+        try:
+            print("Predicting with decomposition...")
+            forecast = model.predict(future, decompose=True)
+            print("Prediction with decomposition successful.")
+        except Exception as e_decomp:
+            print(f"Prediction with decomposition failed ({e_decomp}). Retrying without decomposition...")
+            forecast = model.predict(future, decompose=False)
+        
+        # Do NOT rename yhat1 to yhat, as model.plot expects yhat1
+        # if 'yhat1' in forecast.columns:
+        #    forecast.rename(columns={'yhat1': 'yhat'}, inplace=True)
+            
+        print("Forecast generated successfully.")
+        
+        # 5. Plotting
+        print("Generating plots...")
+        
+        # Plot 1: Overview
         fig1 = model.plot(forecast, plotting_backend="plotly")
-        fig1.update_layout(
-            title="Forecast Overview (Zoomed: Last 30 Days)",
-            xaxis_range=[start_zoom, last_date],
-            xaxis_title="Date",
-            yaxis_title="Energy Production",
-            legend=dict(orientation="h", y=1.02, x=0.5, xanchor="center")
-        )
+        
+        # Rename traces for clarity (yhat1 -> Forecast, y -> Actual)
+        for trace in fig1.data:
+            if trace.name == 'yhat1':
+                trace.name = 'Forecast'
+            if trace.name == 'y':
+                trace.name = 'Actual'
+                
+        fig1.update_layout(title="Forecast Overview (Last 14 Days + Future)")
         fig1_path = os.path.abspath("plot_overview.html")
         fig1.write_html(fig1_path)
-    except Exception as e:
-        print(f"Standard plot failed: {e}. Falling back to manual...")
-        # Fallback manual plot
-        fig1 = go.Figure()
-        fig1.add_trace(go.Scatter(x=forecast['ds'], y=forecast['y'], name='Actual', mode='markers'))
-        fig1.add_trace(go.Scatter(x=forecast['ds'], y=forecast['yhat'], name='Predicted'))
-        fig1_path = os.path.abspath("plot_overview.html")
-        fig1.write_html(fig1_path)
-    
-    # --- Plot 2: Components (Trend, Week, Day) ---
-    try:
+        
+        # Plot 2: Components (Standard)
         fig2 = model.plot_components(forecast, plotting_backend="plotly")
-        # fig2.update_layout(title="Model Components") # NP might not return a single Figure object easily for components? 
-        # Actually plot_components returns a Figure.
         fig2_path = os.path.abspath("plot_components.html")
         fig2.write_html(fig2_path)
-    except Exception as e:
-        print(f"Component plot failed: {e}")
-        fig2_path = "plot_components_failed.html"
-
-    # --- Plot 3: Regressor Impact (If applicable) ---
-    fig3_path = None
-    if model_regressors:
-        reg_names = model_regressors
         
-        # Create a clearer impact plot
-        fig3 = go.Figure()
-        
-        # Add Total Prediction as reference
-        fig3.add_trace(go.Scatter(
-            x=forecast['ds'], 
-            y=forecast['yhat'], 
-            name='Total Predicted',
-            line=dict(color='black', width=2)
-        ))
-        
-        # Add each regressor's contribution
-        # In NP, getting exact contribution requires more work or looking at components.
-        # But we can plot the Regressor INPUT values efficiently here to see correlation.
-        # Or look for component columns in forecast if enabled?
-        # Default predict doesn't return components unless decompose=True?
-        # Let's skip complex decomposition and just plot input values scaled.
-        
-        for reg in reg_names:
-            if reg in forecast.columns:
+        # Plot 3: Custom Regressor Impact Analysis
+        # Extract columns starting with 'future_regressor_'
+        reg_cols = [c for c in forecast.columns if c.startswith('future_regressor_')]
+        if reg_cols:
+            fig3 = go.Figure()
+            for col in reg_cols:
+                # Clean name: future_regressor_temperature_2m -> Temperature 2m
+                clean_name = col.replace('future_regressor_', '').replace('_', ' ').title()
                 fig3.add_trace(go.Scatter(
-                    x=forecast['ds'], 
-                    y=forecast[reg], 
-                    name=f'Input: {reg}',
-                    visible='legendonly' 
+                    x=forecast['ds'],
+                    y=forecast[col],
+                    name=clean_name,
+                    mode='lines'
                 ))
+            fig3.update_layout(
+                title="Regressor Influence (Impact on Production)",
+                yaxis_title="Contribution (kW)", # Assuming kW
+                template="plotly_white"
+            )
+            fig3_path = os.path.abspath("plot_regressor_impact.html")
+            fig3.write_html(fig3_path)
+        else:
+            fig3_path = None
+            
+        # Plot 4: Parameters (Weights)
+        fig4 = model.plot_parameters(plotting_backend="plotly")
+        fig4_path = os.path.abspath("plot_parameters.html")
+        fig4.write_html(fig4_path)
         
-        fig3.update_layout(
-            title="Regressor Inputs Analysis",
-            xaxis_range=[start_zoom, last_date],
-            yaxis_title="Value",
-            template="plotly_white"
-        )
-        fig3_path = os.path.abspath("plot_regressors.html")
-        fig3.write_html(fig3_path)
+        print("Done. Files saved in project root:")
+        print(f" - {fig1_path}")
+        print(f" - {fig2_path}")
+        if fig3_path: print(f" - {fig3_path}")
+        print(f" - {fig4_path}")
+        
+        # Open in browser
+        # Open in browser
+        webbrowser.open(f"file://{fig1_path}")
+        time.sleep(1)
+        webbrowser.open(f"file://{fig2_path}")
+        time.sleep(1)
+        if fig3_path: webbrowser.open(f"file://{fig3_path}")
+        time.sleep(1)
+        webbrowser.open(f"file://{fig4_path}")
 
-    print("Opening plots in browser...")
-    webbrowser.open(f"file://{fig1_path}")
-    time.sleep(1)
-    if fig3_path:
-        webbrowser.open(f"file://{fig3_path}")
-    else:
-        if os.path.exists(fig2_path):
-            webbrowser.open(f"file://{fig2_path}")
-    
-    print("Done. Files saved:")
-    print(f" - {fig1_path}")
-    print(f" - {fig2_path}")
-    if fig3_path:
-        print(f" - {fig3_path}")
+        
+    except Exception as e:
+        print(f"Error during prediction/plotting: {e}")
+        import traceback
+        traceback.print_exc()
 
 if __name__ == "__main__":
     plot_model()

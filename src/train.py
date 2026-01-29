@@ -43,6 +43,12 @@ def train_model():
     
     df_prophet, regressor_names = result
     
+    print("---------------------------------------------------")
+    print(f"Active Regressors ({len(regressor_names)}):")
+    for name in regressor_names:
+        print(f"  - {name}")
+    print("---------------------------------------------------")
+
     # Validate data sufficiency
     training_days = settings['model']['training_days']
     if not validate_data_sufficiency(df_prophet, training_days):

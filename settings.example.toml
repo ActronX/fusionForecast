@@ -5,6 +5,7 @@ longitude = 13.4050   # Decimal longitude
 tilt = 30             # Panel tilt in degrees (0=flat)
 # Azimuth: 0=South, -90=East, 90=West, 180=North
 azimuth = 0           # Orientation angle
+altitude = 0          # Station altitude in meters
 
 [influxdb]
 # InfluxDB connection details
@@ -38,8 +39,8 @@ forecast = "power_produced_forecast" # Final power production forecast | refs: b
 live     = "production"              # Real-time power for nowcasting | refs: buckets.live & measurements.live
 
 # Weather/Regressor fields (Source: buckets.regressor_history/future | measurements.regressor_history/future)
-regressor_history    = "irradiance"           # Historic total irradiance (training) | refs: buckets.regressor_history & measurements.regressor_history
-regressor_future     = "irradiance"           # Forecast total irradiance (prediction) | refs: buckets.regressor_future & measurements.regressor_future
+regressor_history    = ["global_tilted_irradiance", "temperature_2m", "clearsky_ghi"]           # Historic total irradiance (training) | refs: buckets.regressor_history & measurements.regressor_history
+regressor_future     = ["global_tilted_irradiance", "temperature_2m", "clearsky_ghi"]           # Forecast total irradiance (prediction) | refs: buckets.regressor_future & measurements.regressor_future
 
 [weather.open_meteo.historic]
 # Historic Data Fetch Settings
@@ -47,14 +48,14 @@ url = "https://historical-forecast-api.open-meteo.com/v1/forecast" # History API
 start_date = "2024-01-01" # Start date for training history (YYYY-MM-DD)
 end_date = "today"        # End date for training history
 models = "best_match"      # Weather model selection
-minutely_15 = "global_tilted_irradiance_instant" # 15min resolution variable
+minutely_15 = ["global_tilted_irradiance_instant", "diffuse_radiation", "direct_normal_irradiance"] # 15min resolution variable
 
 [weather.open_meteo.forecast]
 # Future Forecast Fetch Settings
 url = "https://api.open-meteo.com/v1/forecast" # Forecast API endpoint
 forecast_days = 14                             # Number of days to predict
 models = "best_match"                          # Model selection
-minutely_15 = "global_tilted_irradiance_instant" # 15min resolution variable
+minutely_15 = ["global_tilted_irradiance_instant", "diffuse_radiation", "direct_normal_irradiance"] # 15min resolution variable
 
 [model]
 # Central model parameters and storage

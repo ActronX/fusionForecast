@@ -13,9 +13,9 @@ echo Running historic Regressor/Weather data fetcher...
 python -m src.fetch_historic_weather
 if %ERRORLEVEL% NEQ 0 (
     echo Execution failed with error code %ERRORLEVEL%
-    pause
+    
     exit /b %ERRORLEVEL%
 )
 
 echo Done.
-pause
+

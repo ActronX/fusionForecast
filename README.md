@@ -80,6 +80,7 @@ The Docker setup uses environment variables to configure both InfluxDB and the a
 | `STATION_LONGITUDE` | Decimal longitude of your location. | `13.4050` |
 | `STATION_TILT` | Tilt (0=flat, 90=vertical). | `30` |
 | `STATION_AZIMUTH` | Azimuth (0=South, -90=East, 90=West). | `0` |
+| `STATION_ALTITUDE` | Station altitude in meters. | `0` |
 | `MODEL_TRAINING_DAYS`| Days of history to use for training. | `30` |
 | `MAX_POWER_CLIP` | Max system output in Watts (outlier clipping).| `6000` |
 | `NIGHT_THRESHOLD` | Watts threshold below which values are treated as night/0. | `50` |
@@ -227,9 +228,9 @@ Here is a detailed description of the Python scripts located in `src/`:
 - **`src/nowcast.py`**: **Real-Time Correction**. Adjusts the forecast based on the last 3 hours of actual production to react to immediate weather changes (e.g., fog).
 
 ### Data Fetching & Calculations
-- **`src/fetch_future_weather.py`**: Fetches **current** weather forecasts from Open-Meteo. If `use_pvlib` is enabled, it automatically triggers the consolidated calculation.
-- **`src/fetch_historic_weather.py`**: Fetches **historical** weather data. If `use_pvlib` is enabled, it automatically triggers the consolidated calculation.
-- **`src/calc_effective_irradiance.py`**: **Consolidated Physics Model**. Calculates Plane of Array (POA) irradiance, applies Incidence Angle Modifier (IAM) losses, and computes the SAPM cell temperature.
+- **`src/fetch_future_weather.py`**: Fetches **current** weather forecasts from Open-Meteo. Uses `weather_utils.py` to calculate effective irradiance (GTI) and clearsky GHI.
+- **`src/fetch_historic_weather.py`**: Fetches **historical** weather data from Open-Meteo. Uses `weather_utils.py` to calculate effective irradiance (GTI) and clearsky GHI.
+- **`src/weather_utils.py`**: **Consolidated Physics Model**. Shared utility that handles `pvlib` calculations for solar position, plane of array (POA) irradiance, and clearsky GHI.
 
 ### Utilities & Maintenance
 

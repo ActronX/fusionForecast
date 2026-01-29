@@ -73,14 +73,71 @@ def evaluate_combination(params, df, regressor_names):
             )
         
         # Split Data
-        freq = '15min'
-        df_train, df_val = m.split_df(df, freq=freq, valid_p=0.2)
+        # Cross-Validation: Satisfy requirement for distributed seasonal validation
+        # k=3 splits the data into 3 time periods to test different seasons
         
-        # Fit
-        m.fit(df_train, freq=freq, progress=None)
+        # Cross-Validation: Satisfy requirement for NON-CONTIGUOUS validation
+        # k=10 splits: We test 10 separate days distributed across that history
         
-        # Predict on validation
-        forecast = m.predict(df_val)
+        # Calculate fold_pct for exactly 1 DAY validation per fold
+        total_duration_days = (df['ds'].max() - df['ds'].min()).days
+        if total_duration_days > 0:
+            fold_pct = 1.05 / total_duration_days # slightly > 1 day to ensure we catch 24h
+        else:
+            fold_pct = 0.01 
+            
+        folds = m.crossvalidation_split_df(df, freq=freq, k=10, fold_pct=fold_pct)
+        
+        all_forecasts = []
+
+        # print(f"  > Starting 10-Fold Cross-Validation (10 scattered days)...")
+        
+        for i, (df_train, df_val) in enumerate(folds):
+            # Log Fold details
+            val_start = df_val['ds'].min()
+            val_end = df_val['ds'].max()
+            val_days = (val_end - val_start).days
+            # print(f"    Fold {i+1}/10: Validating on {val_days} days ({val_start.date()} - {val_end.date()})")
+
+            # Re-initialize model for each fold to ensure independent training
+            m_fold = NeuralProphet(**m.config_model) # Use config from template model
+            # Re-add regressors - this is tricky because they are not in config_model kwargs directly in older versions?
+            # Actually, configuring a new model with same params is safer using the original 'params' dict + settings
+            
+            # Since 'params' variable holds our tuning choices, let's just create a new model like we did above
+            m_fold = NeuralProphet(
+                growth='linear',
+                yearly_seasonality=settings['model']['neuralprophet'].get('yearly_seasonality', False),
+                weekly_seasonality=settings['model']['neuralprophet'].get('weekly_seasonality', False),
+                daily_seasonality=settings['model']['neuralprophet'].get('daily_seasonality', True),
+                seasonality_mode=settings['model']['neuralprophet'].get('seasonality_mode', 'additive'),
+                learning_rate=None, # Auto
+                epochs=None,        # Auto
+                n_lags=settings['model']['neuralprophet'].get('n_lags', 0),
+                n_forecasts=settings['model']['neuralprophet'].get('n_forecasts', 96),
+                ar_layers=settings['model']['neuralprophet'].get('ar_layers', []),
+                accelerator=settings['model']['neuralprophet'].get('accelerator', 'auto'),
+                batch_size=settings['model']['neuralprophet'].get('batch_size', None), # Use new batch setting
+                # Regularization from params
+                seasonality_reg=params['seasonality_reg'],
+                ar_reg=params['ar_reg'],
+                drop_missing=True
+            )
+            
+            # Add regressors
+            reg_mode = params['regressor_mode']
+            for reg_name in regressor_names:
+                m_fold.add_future_regressor(name=reg_name, mode=reg_mode)
+                
+            # Fit
+            m_fold.fit(df_train, freq=freq, progress=None)
+            
+            # Predict
+            fold_forecast = m_fold.predict(df_val)
+            all_forecasts.append(fold_forecast)
+        
+        # Merge forecasts
+        forecast = pd.concat(all_forecasts)
         
         # Validate Forecast
         

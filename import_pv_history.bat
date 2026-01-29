@@ -10,10 +10,12 @@ if exist "venv\Scripts\activate.bat" (
 )
 
 echo Running Regressor/Future Weather data updater...
-python -m src.fetch_future_weather
+python -m src.import_pv_history measurements.csv
 if %ERRORLEVEL% NEQ 0 (
     echo Execution failed with error code %ERRORLEVEL%
+    pause
     exit /b %ERRORLEVEL%
 )
 
 echo Done.
+pause

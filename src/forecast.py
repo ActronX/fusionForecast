@@ -53,7 +53,14 @@ def run_forecast():
     print(f"Fetching regressor data for next {forecast_days} days...")
     regressor_offset = settings['model']['preprocessing'].get('regressor_offset', '0m')
     regressor_scale = settings['model']['preprocessing'].get('regressor_scale', 1.0)
-    regressor_fields = [settings['influxdb']['fields']['regressor_future']]
+    
+    # Handle list or string
+    reg_config = settings['influxdb']['fields']['regressor_future']
+    if isinstance(reg_config, list):
+        regressor_fields = reg_config
+    else:
+        regressor_fields = [reg_config]
+
     regressor_filter = " or ".join([f'r["_field"] == "{f}"' for f in regressor_fields])
     
     query_regressor = f'''
@@ -77,6 +84,9 @@ def run_forecast():
     # Interpolate and prepare regressor columns
     regressor_names = []
     for field in regressor_fields:
+        if field not in df_future.columns:
+             print(f"Warning: Future regressor field '{field}' missing. Filling with 0.")
+             df_future[field] = 0.0
         df_future[field] = df_future[field].interpolate(method='linear', limit_direction='both')
         regressor_names.append(field)
     
@@ -144,6 +154,8 @@ def run_forecast():
         regressor_scale = settings['model']['preprocessing'].get('regressor_scale', 1.0)
         regressor_offset = settings['model']['preprocessing'].get('regressor_offset', '0m')
         
+        # Re-use regressor_filter since fields should match
+        
         query_history_reg = f'''
         import "date"
         from(bucket: "{reg_hist_bucket}")
@@ -155,6 +167,7 @@ def run_forecast():
           |> pivot(rowKey:["_time"], columnKey: ["_field"], valueColumn: "_value")
         '''
         df_hist_reg = db.query_dataframe(query_history_reg)
+
         
         if not df_hist_y.empty and not df_hist_reg.empty:
             # Process and merge historical data
