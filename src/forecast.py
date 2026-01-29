@@ -21,6 +21,85 @@ from src.config import settings
 from src.db import InfluxDBWrapper
 from src.preprocess import postprocess_forecast, prepare_prophet_dataframe 
 
+
+# ============================================================================
+# HELPER FUNCTIONS
+# ============================================================================
+
+def get_regressor_fields(config_key='regressor_future'):
+    """Get regressor field names from settings.
+    
+    Args:
+        config_key: Key in settings['influxdb']['fields'] to read
+        
+    Returns:
+        List of regressor field names
+    """
+    reg_config = settings['influxdb']['fields'][config_key]
+    return reg_config if isinstance(reg_config, list) else [reg_config]
+
+
+def get_lagged_regressor_config():
+    """Get lagged regressor configuration from settings.
+    
+    Returns:
+        Dictionary mapping lagged regressor names to n_lags values
+    """
+    return settings['model']['neuralprophet'].get('lagged_regressors', {})
+
+
+def build_regressor_query(bucket, measurement, fields, start_expr, end_expr, scale, offset):
+    """Build Flux query for fetching regressor data.
+    
+    Args:
+        bucket: InfluxDB bucket name
+        measurement: Measurement name
+        fields: List of field names to fetch
+        start_expr: Start time expression (e.g., 'now()', 'date.sub(d: 3d, from: now())')
+        end_expr: End time expression
+        scale: Scaling factor for values
+        offset: Time offset duration string
+        
+    Returns:
+        Flux query string
+    """
+    filter_str = " or ".join([f'r["_field"] == "{f}"' for f in fields])
+    return f'''
+    import "date"
+    from(bucket: "{bucket}")
+      |> range(start: {start_expr}, stop: {end_expr})
+      |> filter(fn: (r) => r["_measurement"] == "{measurement}")
+      |> filter(fn: (r) => {filter_str})
+      |> map(fn: (r) => ({{ r with _value: r._value * {scale} }}))
+      |> timeShift(duration: {offset})
+      |> pivot(rowKey:["_time"], columnKey: ["_field"], valueColumn: "_value")
+    '''
+
+
+def add_lagged_regressor_columns(df, lagged_config):
+    """Ensure lagged regressor columns exist in dataframe.
+    
+    Args:
+        df: DataFrame to modify
+        lagged_config: Dictionary of lagged regressor configuration
+        
+    Returns:
+        Modified DataFrame with lagged regressor columns
+    """
+    for lag_col in lagged_config.keys():
+        if lag_col not in df.columns:
+            # For Production_W, use 'y' if available, otherwise NaN
+            if 'y' in df.columns:
+                df[lag_col] = df['y']
+            else:
+                df[lag_col] = np.nan
+    return df
+
+
+# ============================================================================
+# MAIN FORECAST FUNCTION
+# ============================================================================
+
 def run_forecast():
     print("Starting forecast pipeline... (NeuralProphet)")
     
@@ -53,26 +132,17 @@ def run_forecast():
     print(f"Fetching regressor data for next {forecast_days} days...")
     regressor_offset = settings['model']['preprocessing'].get('regressor_offset', '0m')
     regressor_scale = settings['model']['preprocessing'].get('regressor_scale', 1.0)
+    regressor_fields = get_regressor_fields('regressor_future')
     
-    # Handle list or string
-    reg_config = settings['influxdb']['fields']['regressor_future']
-    if isinstance(reg_config, list):
-        regressor_fields = reg_config
-    else:
-        regressor_fields = [reg_config]
-
-    regressor_filter = " or ".join([f'r["_field"] == "{f}"' for f in regressor_fields])
-    
-    query_regressor = f'''
-    import "date"
-    from(bucket: "{settings['influxdb']['buckets']['regressor_future']}")
-      |> range(start: now(), stop: date.add(d: {forecast_days}d, to: now()))
-      |> filter(fn: (r) => r["_measurement"] == "{settings['influxdb']['measurements']['regressor_future']}")
-      |> filter(fn: (r) => {regressor_filter})
-      |> map(fn: (r) => ({{ r with _value: r._value * {regressor_scale} }}))
-      |> timeShift(duration: {regressor_offset})
-      |> pivot(rowKey:["_time"], columnKey: ["_field"], valueColumn: "_value")
-    '''
+    query_regressor = build_regressor_query(
+        bucket=settings['influxdb']['buckets']['regressor_future'],
+        measurement=settings['influxdb']['measurements']['regressor_future'],
+        fields=regressor_fields,
+        start_expr='now()',
+        end_expr=f'date.add(d: {forecast_days}d, to: now())',
+        scale=regressor_scale,
+        offset=regressor_offset
+    )
     df_future = db.query_dataframe(query_regressor)
     
     if df_future.empty:
@@ -154,18 +224,16 @@ def run_forecast():
         regressor_scale = settings['model']['preprocessing'].get('regressor_scale', 1.0)
         regressor_offset = settings['model']['preprocessing'].get('regressor_offset', '0m')
         
-        # Re-use regressor_filter since fields should match
-        
-        query_history_reg = f'''
-        import "date"
-        from(bucket: "{reg_hist_bucket}")
-          |> range(start: date.sub(d: {int(fetch_hours)}h, from: now()), stop: now())
-          |> filter(fn: (r) => r["_measurement"] == "{reg_hist_meas}")
-          |> filter(fn: (r) => {regressor_filter})
-          |> map(fn: (r) => ({{ r with _value: r._value * {regressor_scale} }}))
-          |> timeShift(duration: {regressor_offset})
-          |> pivot(rowKey:["_time"], columnKey: ["_field"], valueColumn: "_value")
-        '''
+        # Fetch historical regressors using helper
+        query_history_reg = build_regressor_query(
+            bucket=reg_hist_bucket,
+            measurement=reg_hist_meas,
+            fields=regressor_fields,
+            start_expr=f'date.sub(d: {int(fetch_hours)}h, from: now())',
+            end_expr='now()',
+            scale=regressor_scale,
+            offset=regressor_offset
+        )
         df_hist_reg = db.query_dataframe(query_history_reg)
 
         
@@ -187,15 +255,47 @@ def run_forecast():
                 else:
                     df_history[r] = df_history[r].interpolate(method='linear', limit_direction='both')
             
+
             # Resample to ensure continuous 15-minute intervals and fill gaps
             df_history_final = df_history.copy()
             df_history_final['ds'] = pd.to_datetime(df_history_final['ds'])
+            
+            # Use 'last' for latest value if available, or mean? Mean is safer for interval data.
+            # But let's log the last timestamp before resampling
+            last_raw_ts = df_history_final['ds'].max()
+            print(f"Latest historical data point (raw): {last_raw_ts}")
+            
             df_history_final = df_history_final.set_index('ds').resample('15min').mean()
             df_history_final = df_history_final.fillna(0)
             df_history_final = df_history_final.reset_index()
-            df_history_final = df_history_final[['ds', 'y'] + regressor_names].copy()
             
-            print(f"Loaded {len(df_history_final)} historical data points")
+            # Build column list: ds, y, regressors, and lagged regressors
+            columns_to_keep = ['ds', 'y'] + regressor_names
+            
+            # Add lagged regressor columns using helper
+            lagged_reg_config = get_lagged_regressor_config()
+            df_history_final = add_lagged_regressor_columns(df_history_final, lagged_reg_config)
+            
+            # Add lagged columns to keep list
+            for lag_col in lagged_reg_config.keys():
+                if lag_col in df_history_final.columns and lag_col not in columns_to_keep:
+                    columns_to_keep.append(lag_col)
+            
+            df_history_final = df_history_final[columns_to_keep].copy()
+            
+            last_resampled_ts = df_history_final['ds'].max()
+            print(f"Loaded {len(df_history_final)} historical data points. Latest (resampled): {last_resampled_ts}")
+            
+            # Warn if data is old (e.g. > 30 mins)
+            now_check = pd.Timestamp.now(tz=None) # naive timestamp to match df
+             # Convert if tz-aware
+            if last_resampled_ts.tzinfo is None and now_check.tzinfo is not None:
+                now_check = now_check.tz_localize(None)
+
+            age = (now_check - last_resampled_ts).total_seconds() / 60
+            if age > 45:
+                print(f"WARNING: Historical data is {age:.1f} minutes old! Intraday correction may be outdated.")
+
             
     # Generate predictions using recursive chunked forecasting
     print(f"Starting chunked forecasting for {len(df_future_final)} periods (step size={n_forecasts})...")
@@ -216,6 +316,10 @@ def run_forecast():
         actual_len = len(chunk)
         chunk['y'] = np.nan
         
+        # Ensure lagged regressor columns exist using helper
+        lagged_reg_config = get_lagged_regressor_config()
+        chunk = add_lagged_regressor_columns(chunk, lagged_reg_config)
+        
         # Pad chunk to exactly n_forecasts if needed (required for multi-step prediction)
         if actual_len < n_forecasts:
             pad_len = n_forecasts - actual_len
@@ -226,7 +330,13 @@ def run_forecast():
             })
             for col in regressor_names:
                 padding[col] = chunk[col].iloc[-1]
+            # Pad lagged regressor columns using helper
+            lagged_reg_config = get_lagged_regressor_config()
+            for lag_col in lagged_reg_config.keys():
+                if lag_col in chunk.columns:
+                    padding[lag_col] = chunk[lag_col].iloc[-1]
             chunk = pd.concat([chunk, padding], ignore_index=True)
+
 
         # Combine history with future chunk for prediction
         step_input = pd.concat([current_history.tail(n_lags), chunk], ignore_index=True)
@@ -255,7 +365,20 @@ def run_forecast():
             # Update history with predictions for next recursive iteration
             new_history = res_chunk.copy()
             new_history['y'] = res_chunk['yhat']
+            
+            # Build columns to keep: ds, y, regressors, and lagged regressors
             keep_cols = ['ds', 'y'] + [col for col in regressor_names if col in new_history.columns]
+            
+            # Add lagged regressor columns using helper
+            lagged_reg_config = get_lagged_regressor_config()
+            for lag_col in lagged_reg_config.keys():
+                if lag_col in new_history.columns and lag_col not in keep_cols:
+                    keep_cols.append(lag_col)
+                elif lag_col not in new_history.columns:
+                    # For lagged regressors, use predicted values (yhat) as future values
+                    new_history[lag_col] = res_chunk['yhat']
+                    keep_cols.append(lag_col)
+            
             new_history = new_history[keep_cols]
             current_history = pd.concat([current_history, new_history], ignore_index=True)
             

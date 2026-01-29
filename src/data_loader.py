@@ -124,8 +124,40 @@ def fetch_training_data(verbose: bool = True):
     if df_prophet.empty:
         print("Error: Training data empty after merging regressor. Check time alignment.")
         return None
+    
+    # 4. Fetch lagged regressor data (e.g., Production_W for real-time correction)
+    lagged_reg_config = settings['model']['neuralprophet'].get('lagged_regressors', {})
+    if lagged_reg_config:
+        if verbose:
+            print(f"Fetching lagged regressor data from {settings['influxdb']['buckets']['live']}...")
+        
+        # Fetch Production_W from live bucket
+        if 'Production_W' in lagged_reg_config:
+            query_production = f'''
+            from(bucket: "{settings['influxdb']['buckets']['live']}")
+              |> range(start: {range_start})
+              |> filter(fn: (r) => r["_measurement"] == "{settings['influxdb']['measurements']['live']}")
+              |> filter(fn: (r) => r["_field"] == "{settings['influxdb']['fields']['live']}")
+              |> pivot(rowKey:["_time"], columnKey: ["_field"], valueColumn: "_value")
+            '''
+            df_production = db.query_dataframe(query_production)
+            
+            if not df_production.empty:
+                df_production = prepare_prophet_dataframe(df_production, freq='15min')
+                df_production.rename(columns={settings['influxdb']['fields']['live']: 'Production_W'}, inplace=True)
+                
+                # Merge with main dataframe
+                df_prophet = pd.merge(df_prophet, df_production[['ds', 'Production_W']], on='ds', how='left')
+                df_prophet['Production_W'] = df_prophet['Production_W'].fillna(0)  # Fill missing with 0
+                
+                if verbose:
+                    print(f"Added Production_W column for lagged regressor (shape: {df_prophet.shape})")
+            else:
+                print("Warning: No Production_W data found. Lagged regressor will be skipped during training.")
+                df_prophet['Production_W'] = 0.0  # Add column with zeros as fallback
 
     return df_prophet, regressor_names
+
 
 
 def validate_data_sufficiency(df: pd.DataFrame, required_days: int, tolerance: float = 0.9) -> bool:
