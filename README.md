@@ -8,9 +8,12 @@ FusionForecast is an ML-based tool for forecasting time series data (e.g., PV ge
 
 - **Data Source**: Reads training data (target value and regressor) from InfluxDB.
 - **Modeling**: Uses NeuralProphet (PyTorch) for time series forecasting.
+- **Intraday Correction**: Dual-mechanism approach for real-time forecast adjustments:
+  - **AR-Net** (`n_lags=8`): Learns autoregressive patterns from the last 2 hours of production.
+  - **Lagged Regressor** (`Production_W`): Uses actual production from the last 2 hours for dynamic corrections.
+  - No separate nowcast script needed - corrections happen automatically during forecast generation.
 - **Server-Side Aggregation**: Performs downsampling (e.g., to 1h means) directly in the database.
 - **Configurable**: All settings (buckets, measurements, offsets) are defined in `settings.toml`.
-
 - **Offset Support**: Supports time offsets for regressors (e.g., to adjust time zones or lead times).
 
 ## Prerequisites
