@@ -101,15 +101,14 @@ Specific settings for the NeuralProphet model (PyTorch-based deep learning frame
 
 **AutoRegressive (AR) Configuration:**
 These parameters enable multi-step forecasting with historical context:
-- `n_lags`: Number of historical time steps to use as input (default: `96` = 24 hours at 15-min intervals).
-  - **How it works**: The model looks back at the last `n_lags` actual production values to inform predictions.
-  - **Example**: With `n_lags=96`, the model uses the past 24 hours of production history.
+- `n_lags`: Number of historical time steps to use as AR input (default: `8` = 2 hours at 15-min intervals).
+  - **How it works**: The AR-Net looks back at the last `n_lags` actual production values to inform predictions.
+  - **Example**: With `n_lags=8`, the model uses the past 2 hours of production history for intraday patterns.
 - `n_forecasts`: Number of future steps to predict simultaneously (default: `96` = 24 hours).
   - **Multi-step prediction**: Instead of predicting one step at a time, the model generates all 96 future values in one forward pass.
-- `ar_layers`: Hidden layer configuration for AR network (default: `[]` = linear AR, no hidden layers).
-  - **Empty list** means simpler, faster linear relationships.
-- `num_hidden_layers`: Global model depth (default: `0` = linear model).
-- `d_hidden`: Hidden layer dimension (default: `16`, unused when `num_hidden_layers=0`).
+- `ar_layers`: Hidden layer configuration for AR network (default: `[32, 16]` = two hidden layers for deep AR-Net).
+  - **Non-empty list** enables deeper learning of complex autoregressive relationships.
+- **Lagged Regressors**: Additional configuration under `[model.neuralprophet.lagged_regressors]` allows using other variables (like actual production) as lagged inputs alongside AR-Net.
 
 
 
@@ -118,10 +117,14 @@ These parameters enable multi-step forecasting with historical context:
 - `process_count`: Parallel CPU cores for Optuna optimization.
 - `night_threshold`: Power level (Watts) below which data is ignored during evaluation to prevent "easy night wins" from skewing metrics.
 
-#### 10. Nowcast Settings `[nowcast]`
-Real-time damping factor correction.
-- `use_damping_factor`: Toggle the live correction.
-- `min_damping_factor` / `max_damping_factor`: Safety limits to prevent extreme forecast scaling based on temporary anomalies.
+#### 9. Lagged Regressors `[model.neuralprophet.lagged_regressors]`
+Lagged regressors enable real-time intraday corrections by incorporating recent actual production data into future predictions.
+- `Production_W`: Number of lags (time steps) of actual production to use (default: `8` = 2 hours at 15-min intervals).
+  - **How it works**: The model uses the last 2 hours of actual production as an additional input feature alongside weather data.
+  - **Effect**: Enables dynamic forecast corrections for immediate weather changes (e.g., fog, clouds) without a separate nowcast script.
+  - **Combined with AR-Net**: Works alongside `n_lags` for comprehensive intraday prediction.
+
+#### 10. Hyperparameter Tuning `[model.tuning]`
 
 ## Usage Workflow
 
@@ -165,34 +168,13 @@ The forecast script loads the saved model and future regressor data (e.g., weath
 - Windows: `forecast.bat` or `python -m src.forecast`
 - Linux: `./forecast.sh` or `python3 -m src.forecast`
 
-### 6. Nowcast (Real-Time Correction)
+### 6. Intraday Monitoring (Optional)
 
-The standard forecast (Step 5) is based on global weather models, which have a **spatial resolution of several kilometers** (e.g., ~2 km to 10 km). Therefore, they cannot perfectly predict small-scale local events (e.g., a single cloud field or fog patches directly over your roof).
+The forecast script automatically performs intraday corrections using the **lagged regressor** approach:
+- **AR-Net** (`n_lags=8`): Uses last 2 hours of target values for autoregressive predictions.
+- **Lagged Regressor** (`Production_W`): Uses last 2 hours of actual production to dynamically adjust forecasts.
 
-**Furthermore, a forecast is always a simulation.** It can never match the accuracy of a **real-time measurement**. The actual production data reflects the *ground truth* of the current conditions (reflecting exact local shadowing, dirt, snow, or hardware limits), which a general weather model cannot fully capture.
-
-The **Nowcast** script runs frequently (e.g., every 15 minutes) to correct the forecast for the immediate future.
-
-**How it works (Damping Factor):**
-
-1.  **Weighted History:** It compares **Actual Production** vs. **Forecast** for the last 3 hours using a time-based decay.
-    *   **Why?** To react faster to changing weather (e.g., fog clearing). Data from 2 hours ago is faded out to prioritize the current trend.
-2.  **Damping Factor:** It calculates a performance ratio (e.g., if Production is only 50% of Forecast, Factor = 0.5).
-3.  **Apply (Decaying Influence):** The factor is applied to the next 24 hours of the forecast with a **time-based decay** (Half-Life: 1 hour).
-    *   **Why?** Weather anomalies (like a passing cloud or morning fog) are often temporary.
-    *   **Concept:**
-        *   **Short-Term (0-1h):** We trust our *local* 'Live-Correction' fully. (If it's foggy *now*, it will likely be foggy in 30 mins).
-        *   **Long-Term (2h+):** We trust the *global* 'Weather Forecast' again. (An individual cloud now doesn't mean the whole day is ruined).
-
-**Effect:**
-*   **Now (0h):** 100% Correction.
-*   **+1h:** 50% Correction.
-*   **+2h:** 25% Correction.
-*   **+4h:** ~6% Correction (Back to original Forecast).
-
-**Start:**
-- Windows: `nowcast.bat` or `python -m src.nowcast`
-- Linux: `./nowcast.sh` or `python3 -m src.nowcast`
+No separate nowcast script needed - corrections happen automatically during forecast generation when live production data is available.
 
 ### 7. Run Pipeline (Full Automation)
 
@@ -201,8 +183,7 @@ Executes the complete workflow in order:
 2. **Fetch Historic Weather**: Updates historic data.
 3. **Fetch Future Weather**: Updates forecast data.
 4. **Train Model**: Retrains the model.
-5. **Create Forecast**: Generates the forecast.
-6. **Nowcast**: Real-Time Correction.
+5. **Create Forecast**: Generates the forecast with intraday correction.
 
 **Start:**
 - Windows: `run_pipeline.bat`
@@ -246,9 +227,8 @@ The tuning script evaluates model performance using Cross-Validation and calcula
 Here is a detailed description of the Python scripts located in `src/`:
 
 ### Core Pipeline
-- **`src/train.py`**: Trains the **Production** (PV) model. Fetches historical production and regressor data, trains NeuralProphet with AR mode, and saves `prophet_model.pkl`.
-- **`src/forecast.py`**: Generates **Production** forecasts using multi-step prediction. Loads the model, fetches future weather data and historical context (for AR mode), predicts generation in 24-hour chunks, and writes to InfluxDB.
-- **`src/nowcast.py`**: **Real-Time Correction**. Adjusts the forecast based on the last 3 hours of actual production to react to immediate weather changes (e.g., fog).
+- **`src/train.py`**: Trains the **Production** (PV) model. Fetches historical production and regressor data, configures AR-Net (`n_lags=8`) and lagged regressors (`Production_W`), trains NeuralProphet, and saves `prophet_model.pkl`.
+- **`src/forecast.py`**: Generates **Production** forecasts using multi-step prediction with **intraday correction**. Uses AR-Net for autoregressive patterns and lagged regressors for real-time corrections based on actual production. Predicts generation in 24-hour chunks and writes to InfluxDB.
 
 ### Data Fetching & Calculations
 - **`src/fetch_future_weather.py`**: Fetches **current** weather forecasts from Open-Meteo. Uses `weather_utils.py` to calculate effective irradiance (GTI) and clearsky GHI.
@@ -272,7 +252,9 @@ This section describes which data is read from and written to InfluxDB, and why 
 - **Reads**:
     - **Production History** (`buckets.history_produced`): Actual historical PV generation data.
     - **Regressor History** (`buckets.regressor_history`): Historical weather data (e.g., solar irradiance) corresponding to the production history.
-- **Why**: The NeuralProphet model needs to learn the relationship between the target variable (Production) and time/weather. With AR mode enabled (`n_lags > 0`), it also learns to use recent production patterns to improve short-term accuracy.
+- **Why**: The NeuralProphet model needs to learn the relationship between the target variable (Production) and time/weather. The model uses:
+  - **AR-Net** (`n_lags=8`): Uses last 2 hours of target values to capture short-term autoregressive patterns.
+  - **Lagged Regressor** (`Production_W`): Uses last 2 hours of actual production to enable real-time intraday corrections.
 
 ### 2. Forecasting (Prediction)
 *Scripts: `src/forecast.py`*
@@ -310,9 +292,6 @@ Add the following lines (adjust `/path/to/fusionForecast` to your installation p
 
 # Create a forecast every 15 minutes (e.g. at minute 2, 17, 32, 47)
 2,17,32,47 * * * * /path/to/fusionForecast/forecast.sh >> /path/to/fusionForecast/logs/forecast.log 2>&1
-
-# Run Nowcast every 15 minutes (e.g., shortly after forecast, at minute 4, 19, 34, 49)
-4,19,34,49 * * * * /path/to/fusionForecast/nowcast.sh >> /path/to/fusionForecast/logs/nowcast.log 2>&1
 
 # Fetch historic weather data once a month (e.g., 1st of the month at 01:00 AM)
 0 1 1 * * /path/to/fusionForecast/fetch_historic_weather.sh >> /path/to/fusionForecast/logs/fetch_historic.log 2>&1

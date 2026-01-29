@@ -153,9 +153,9 @@ curl -X POST "http://localhost:8086/api/v2/write?org=fusionforecast&bucket=energ
   --data-raw "energy_meter power_produced=1550.0 1704111300"
 ```
 
-### Pushing Live Data via Curl (Nowcast)
+### Pushing Live Data via Curl (Intraday Correction)
 
-For real-time forecasting and correction, you must regularly push your current PV production into the `live` bucket using the following mapping:
+For real-time intraday correction, you can optionally push your current PV production into the `live` bucket. The model uses this data as a **lagged regressor** (last 2 hours of actual production) to dynamically adjust forecasts. Mapping:
 - **Bucket**: `energy_meter` (Live)
 - **Measurement**: `energy_meter` (Live)
 - **Field**: `production` (Live)
@@ -214,8 +214,7 @@ Docker volumes ensure your data survives container restarts:
 
 The container automatically:
 - ✅ Fetches weather forecasts every 15 minutes.
-- ✅ Generates PV forecasts every 15 minutes.
-- ✅ Updates nowcast corrections every 15 minutes.
+- ✅ Generates PV forecasts with intraday correction every 15 minutes.
 - ✅ Retrains model monthly (1st of month at 02:00).
 
 ## Script Overview
@@ -223,9 +222,11 @@ The container automatically:
 Here is a detailed description of the Python scripts located in `src/`:
 
 ### Core Pipeline
-- **`src/train.py`**: Trains the **Production** (PV) model. Fetches historical production and regressor data, trains NeuralProphet, and saves `prophet_model.pkl`.
-- **`src/forecast.py`**: Generates **Production** forecasts using multi-step prediction. Loads the model, fetches future weather data, predicts generation using AutoRegressive (AR) mode with historical context, and writes to InfluxDB.
-- **`src/nowcast.py`**: **Real-Time Correction**. Adjusts the forecast based on the last 3 hours of actual production to react to immediate weather changes (e.g., fog).
+- **`src/train.py`**: Trains the **Production** (PV) model. Fetches historical production and regressor data, configures the model with AR-Net (`n_lags=8`, 2h context) and lagged regressors (`Production_W`, 2h actual production), trains NeuralProphet, and saves `prophet_model.pkl`.
+- **`src/forecast.py`**: Generates **Production** forecasts using multi-step prediction with **intraday correction**. Uses:
+  - **AR-Net** (`n_lags=8`): Autoregressive network learns from last 2h of target values.
+  - **Lagged Regressor** (`Production_W`): Incorporates last 2h of actual production to dynamically correct forecasts for immediate weather changes (e.g., fog, clouds).
+  - Loads the model, fetches future weather data and recent production, predicts generation, and writes to InfluxDB.
 
 ### Data Fetching & Calculations
 - **`src/fetch_future_weather.py`**: Fetches **current** weather forecasts from Open-Meteo. Uses `weather_utils.py` to calculate effective irradiance (GTI) and clearsky GHI.
@@ -249,7 +250,9 @@ This section describes which data is read from and written to InfluxDB, and why 
 - **Reads**:
     - **Production History** (`buckets.history_produced`): Actual historical PV generation data.
     - **Regressor History** (`buckets.regressor_history`): Historical weather data (e.g., solar irradiance) corresponding to the production history.
-- **Why**: The NeuralProphet model needs to learn the relationship between the target variable (Production) and time/weather. The model uses AutoRegressive (AR) mode with `n_lags` to incorporate recent historical patterns for more accurate predictions.
+- **Why**: The NeuralProphet model needs to learn the relationship between the target variable (Production) and time/weather. The model uses:
+  - **AutoRegressive (AR-Net)** with `n_lags=8`: Learns from the last 2 hours of target values to capture short-term patterns.
+  - **Lagged Regressor** (`Production_W`): Uses the last 2 hours of actual production as an additional input to enable real-time intraday corrections without a separate nowcast script.
 
 ### 2. Forecasting (Prediction)
 *Scripts: `src/forecast.py`*

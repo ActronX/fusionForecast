@@ -19,7 +19,7 @@ history_produced = "energy_data"   # Past PV generation data
 regressor_history = "weather_data" # Historical weather data
 regressor_future = "weather_data"  # Weather forecast data
 target_forecast = "forecast_results" # Prediction output destination
-live = "energy_meter"              # Real-time production for nowcasting
+live = "energy_meter"              # Real-time production for intraday correction (lagged regressor)
 
 [influxdb.measurements]
 # Measurement names for different data categories
@@ -28,7 +28,6 @@ regressor_history = "weather"             # Source for historic weather | ref: b
 regressor_future  = "weather"             # Source for weather forecasts | ref: buckets.regressor_future
 forecast          = "production_forecast" # Output for model predictions | ref: buckets.target_forecast
 live              = "energy_meter"        # Real-time data source | ref: buckets.live
-nowcast           = "nowcast"             # Output for nowcast adjustments | ref: buckets.target_forecast
 
 [influxdb.fields]
 # Data field mapping within measurements
@@ -36,7 +35,7 @@ nowcast           = "nowcast"             # Output for nowcast adjustments | ref
 
 produced = "power_produced"          # Actual PV power/energy produced | refs: buckets.history_produced & measurements.produced
 forecast = "power_produced_forecast" # Final power production forecast | refs: buckets.target_forecast & measurements.forecast
-live     = "production"              # Real-time power for nowcasting | refs: buckets.live & measurements.live
+live     = "production"              # Real-time power for lagged regressor | refs: buckets.live & measurements.live
 
 # Weather/Regressor fields (Source: buckets.regressor_history/future | measurements.regressor_history/future)
 regressor_history    = ["global_tilted_irradiance", "temperature_2m", "clearsky_ghi"]           # Historic total irradiance (training) | refs: buckets.regressor_history & measurements.regressor_history
@@ -89,14 +88,10 @@ regressor_mode = "additive"       # Regressor mode: "additive" or "multiplicativ
 accelerator = "auto" # "cpu", "gpu", or "auto"
 
 # Network Architecture (Deep Learning Configuration)
-n_lags = 288              # 72 hours context (288 * 15min = 3 days) for weather pattern recognition
+n_lags = 8                 # 3 hours context (8 * 15min) for intraday correction
 n_forecasts = 96         # Predict 24 hours at once (96 * 15min)
 ar_layers = [32, 16]     # Deep AR-Net: Two hidden layers [32, 16]
 
-
-
-[nowcast]
-# Real-time adjustment (damping factor) settings
-use_damping_factor = true  # Enable real-time correction based on actuals
-min_damping_factor = 0.3  # Minimum allowed adjustment factor
-max_damping_factor = 1.5   # Maximum allowed adjustment factor
+# Lagged Regressors
+[model.neuralprophet.lagged_regressors]
+Production_W = 8  # Last 2 hours of actual production (8 * 15min)
