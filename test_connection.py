@@ -46,7 +46,9 @@ def test_connection():
             p_bucket = f"{bucket} ({b_key})" if bucket else "MISSING"
             if bucket: expected_buckets.add(bucket)
             
-            print(f"{name:<25} | {purpose:<32} | {p_bucket:<35} | {meas:<20} | {field:<20}")
+            # Convert field to string if it's a list (e.g. for regressors)
+            field_str = str(field)
+            print(f"{name:<25} | {purpose:<32} | {p_bucket:<35} | {meas:<20} | {field_str:<20}")
 
         print("-" * 140)
 

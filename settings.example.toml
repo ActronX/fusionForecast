@@ -87,6 +87,7 @@ seasonality_reg = 0.0
 ar_reg = 0.0                      # AutoRegressive regularization
 regressor_mode = "additive"       # Regressor mode: "additive" or "multiplicative"
 accelerator = "auto" # "cpu", "gpu", or "auto"
+loss_func = "Huber"  # "Huber", "MAE", or "MSE"
 
 # Network Architecture (Deep Learning Configuration)
 n_lags = 288              # 72 hours context (288 * 15min = 3 days) for weather pattern recognition

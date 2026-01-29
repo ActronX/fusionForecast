@@ -77,6 +77,7 @@ def train_model():
         # d_hidden/num_hidden_layers removed for v0.9.0 compatibility
         ar_layers=p_settings.get('ar_layers', [64, 32]),
         accelerator=p_settings.get('accelerator', 'auto'),
+        loss_func=p_settings.get('loss_func', 'Huber'),
         drop_missing=True
     )
     
