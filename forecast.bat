@@ -13,9 +13,8 @@ echo Running forecast pipeline...
 python -m src.forecast
 if %ERRORLEVEL% NEQ 0 (
     echo Execution failed with error code %ERRORLEVEL%
-    pause
     exit /b %ERRORLEVEL%
 )
 
 echo Done.
-pause
+

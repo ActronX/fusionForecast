@@ -90,14 +90,9 @@ def train_model():
             mode=reg_mode
         )
     
-    # Add lagged regressors (e.g., recent production data)
-    lagged_regs = p_settings.get('lagged_regressors', {})
-    for lag_name, n_lags_val in lagged_regs.items():
-        if lag_name in df_prophet.columns:
-            print(f"Adding lagged regressor: {lag_name} (n_lags={n_lags_val})")
-            model.add_lagged_regressor(names=lag_name, n_lags=n_lags_val)
-        else:
-            print(f"Warning: Lagged regressor '{lag_name}' not found in training data. Skipping.")
+    # Lagged regressors are now handled by n_lags (Autoregression)
+    # Manual add_lagged_regressor loop removed as we use built-in AR for the target variable.
+
 
 
     

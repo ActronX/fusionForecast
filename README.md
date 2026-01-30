@@ -9,9 +9,8 @@ FusionForecast is an ML-based tool for forecasting time series data (e.g., PV ge
 - **Data Source**: Reads training data (target value and regressor) from InfluxDB.
 - **Modeling**: Uses NeuralProphet (PyTorch) for time series forecasting.
 - **Intraday Correction**: Dual-mechanism approach for real-time forecast adjustments:
-  - **AR-Net** (`n_lags=8`): Learns autoregressive patterns from the last 2 hours of production.
-  - **Lagged Regressor** (`Production_W`): Uses actual production from the last 2 hours for dynamic corrections.
-  - No separate nowcast script needed - corrections happen automatically during forecast generation.
+  - **AR-Net** (`n_lags=12`): Learns autoregressive patterns from the last 3 hours of production to capture short-term trends.
+  - **Intraday Correction**: The AR mechanism automatically uses recent live production data to adjust the forecast start point.
 - **Server-Side Aggregation**: Performs downsampling (e.g., to 1h means) directly in the database.
 - **Configurable**: All settings (buckets, measurements, offsets) are defined in `settings.toml`.
 - **Offset Support**: Supports time offsets for regressors (e.g., to adjust time zones or lead times).
@@ -225,11 +224,11 @@ The container automatically:
 Here is a detailed description of the Python scripts located in `src/`:
 
 ### Core Pipeline
-- **`src/train.py`**: Trains the **Production** (PV) model. Fetches historical production and regressor data, configures the model with AR-Net (`n_lags=8`, 2h context) and lagged regressors (`Production_W`, 2h actual production), trains NeuralProphet, and saves `prophet_model.pkl`.
-- **`src/forecast.py`**: Generates **Production** forecasts using multi-step prediction with **intraday correction**. Uses:
-  - **AR-Net** (`n_lags=8`): Autoregressive network learns from last 2h of target values.
-  - **Lagged Regressor** (`Production_W`): Incorporates last 2h of actual production to dynamically correct forecasts for immediate weather changes (e.g., fog, clouds).
-  - Loads the model, fetches future weather data and recent production, predicts generation, and writes to InfluxDB.
+- **`src/train.py`**: Trains the **Production** (PV) model. Fetches historical production and regressor data, configures the model with **AR-Net** (`n_lags=12`, 3h context) and **Deep AR-Net** layers, trains NeuralProphet, and saves `prophet_model.pkl`.
+- **`src/forecast.py`**: Generates **Production** forecasts using multi-step prediction with **AR correction**. Uses:
+  - **AR-Net**: Autoregressive network initializes with the last 3h of live production.
+  - **Recursive Forecasting**: Predicts 24 hours in chunks, feeding predictions back as history for subsequent steps.
+  - Loads the model, fetches future weather data and recent production (via `data_loader.py`), predicts generation, and writes to InfluxDB.
 
 ### Data Fetching & Calculations
 - **`src/fetch_future_weather.py`**: Fetches **current** weather forecasts from Open-Meteo. Uses `weather_utils.py` to calculate effective irradiance (GTI) and clearsky GHI.
@@ -254,8 +253,7 @@ This section describes which data is read from and written to InfluxDB, and why 
     - **Production History** (`buckets.history_produced`): Actual historical PV generation data.
     - **Regressor History** (`buckets.regressor_history`): Historical weather data (e.g., solar irradiance) corresponding to the production history.
 - **Why**: The NeuralProphet model needs to learn the relationship between the target variable (Production) and time/weather. The model uses:
-  - **AutoRegressive (AR-Net)** with `n_lags=8`: Learns from the last 2 hours of target values to capture short-term patterns.
-  - **Lagged Regressor** (`Production_W`): Uses the last 2 hours of actual production as an additional input to enable real-time intraday corrections without a separate nowcast script.
+  - **AutoRegressive (AR-Net)** with `n_lags=12`: Learns from the last 3 hours of target values to capture short-term patterns and initialize predictions.
 
 ### 2. Forecasting (Prediction)
 *Scripts: `src/forecast.py`*

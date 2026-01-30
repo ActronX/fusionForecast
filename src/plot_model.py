@@ -100,6 +100,32 @@ def plot_model():
     # Sort and fill
     df_hist = df_hist.sort_values('ds').reset_index(drop=True)
     df_hist = df_hist.fillna(0) # Simple fill for plotting gaps
+    
+    # Fetch lagged regressor data (Production_W) if configured
+    lagged_reg_config = settings['model']['neuralprophet'].get('lagged_regressors', {})
+    if 'Production_W' in lagged_reg_config:
+        print("  - Fetching Production_W for lagged regressor...")
+        query_production = f'''
+        from(bucket: "{settings['influxdb']['buckets']['live']}")
+          |> range(start: {range_start})
+          |> filter(fn: (r) => r["_measurement"] == "{settings['influxdb']['measurements']['live']}")
+          |> filter(fn: (r) => r["_field"] == "{settings['influxdb']['fields']['live']}")
+          |> pivot(rowKey:["_time"], columnKey: ["_field"], valueColumn: "_value")
+        '''
+        df_production = db.query_dataframe(query_production)
+        
+        if not df_production.empty:
+            df_production['ds'] = pd.to_datetime(df_production['_time']).dt.tz_localize(None)
+            live_field = settings['influxdb']['fields']['live']
+            if live_field in df_production.columns:
+                df_production.rename(columns={live_field: 'Production_W'}, inplace=True)
+                df_hist = pd.merge(df_hist, df_production[['ds', 'Production_W']], on='ds', how='left')
+                df_hist['Production_W'] = df_hist['Production_W'].fillna(df_hist['y'])  # Use 'y' as fallback
+                print(f"    Added Production_W column (lagged regressor)")
+        else:
+            # If no live data, use 'y' as Production_W
+            df_hist['Production_W'] = df_hist['y']
+            print("    No live data found, using 'y' as Production_W")
 
     # B. Fetch Future Regressors
     print("  - Fetching Future Regressors...")

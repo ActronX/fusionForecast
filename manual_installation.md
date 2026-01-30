@@ -101,9 +101,9 @@ Specific settings for the NeuralProphet model (PyTorch-based deep learning frame
 
 **AutoRegressive (AR) Configuration:**
 These parameters enable multi-step forecasting with historical context:
-- `n_lags`: Number of historical time steps to use as AR input (default: `8` = 2 hours at 15-min intervals).
+- `n_lags`: Number of historical time steps to use as AR input (default: `12` = 3 hours at 15-min intervals).
   - **How it works**: The AR-Net looks back at the last `n_lags` actual production values to inform predictions.
-  - **Example**: With `n_lags=8`, the model uses the past 2 hours of production history for intraday patterns.
+  - **Example**: With `n_lags=12`, the model uses the past 3 hours of production history for intraday patterns.
 - `n_forecasts`: Number of future steps to predict simultaneously (default: `96` = 24 hours).
   - **Multi-step prediction**: Instead of predicting one step at a time, the model generates all 96 future values in one forward pass.
 - `ar_layers`: Hidden layer configuration for AR network (default: `[32, 16]` = two hidden layers for deep AR-Net).
@@ -118,11 +118,8 @@ These parameters enable multi-step forecasting with historical context:
 - `night_threshold`: Power level (Watts) below which data is ignored during evaluation to prevent "easy night wins" from skewing metrics.
 
 #### 9. Lagged Regressors `[model.neuralprophet.lagged_regressors]`
-Lagged regressors enable real-time intraday corrections by incorporating recent actual production data into future predictions.
-- `Production_W`: Number of lags (time steps) of actual production to use (default: `8` = 2 hours at 15-min intervals).
-  - **How it works**: The model uses the last 2 hours of actual production as an additional input feature alongside weather data.
-  - **Effect**: Enables dynamic forecast corrections for immediate weather changes (e.g., fog, clouds) without a separate nowcast script.
-  - **Combined with AR-Net**: Works alongside `n_lags` for comprehensive intraday prediction.
+Lagged regressors are currently unused in favor of the built-in **AR-Net** (`n_lags`), which handles intraday corrections more effectively for this use case.
+
 
 #### 10. Hyperparameter Tuning `[model.tuning]`
 
@@ -170,11 +167,10 @@ The forecast script loads the saved model and future regressor data (e.g., weath
 
 ### 6. Intraday Monitoring (Optional)
 
-The forecast script automatically performs intraday corrections using the **lagged regressor** approach:
-- **AR-Net** (`n_lags=8`): Uses last 2 hours of target values for autoregressive predictions.
-- **Lagged Regressor** (`Production_W`): Uses last 2 hours of actual production to dynamically adjust forecasts.
+The forecast script automatically performs intraday corrections using the **AR-Net** mechanism:
+- **AR-Net** (`n_lags=12`): Uses last 3 hours of target values for autoregressive predictions.
 
-No separate nowcast script needed - corrections happen automatically during forecast generation when live production data is available.
+No separate nowcast script needed - corrections happen automatically because the forecast loop is initialized with recent production data.
 
 ### 7. Run Pipeline (Full Automation)
 

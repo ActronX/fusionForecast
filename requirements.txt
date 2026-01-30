@@ -13,5 +13,7 @@ requests-cache
 retry-requests
 optuna
 pvlib
+plotly-resampler>=0.9.0
+ipywidgets>=8.0.0
 
 
