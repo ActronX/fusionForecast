@@ -76,18 +76,18 @@ def plot_intraday_ar():
     # 3. Recursive Simulation (Gap Filling & Future Prediction)
     print("Preparing recursive simulation...")
     
-    # Combined dataframe
-    # History has 'y', Future has Regressors but no 'y'
-    full_df = pd.concat([df_hist, df_future], ignore_index=True).sort_values('ds').reset_index(drop=True)
+    # Ensure no timestamp overlap between history and future
+    last_hist_time = df_hist['ds'].max()
+    df_future = df_future[df_future['ds'] > last_hist_time].copy()
+    
+    if df_future.empty:
+        print("Warning: No future data after filtering overlaps. Using history only.")
+        full_df = df_hist.copy()
+    else:
+        # Combined dataframe - no duplicates possible now
+        full_df = pd.concat([df_hist, df_future], ignore_index=True).sort_values('ds').reset_index(drop=True)
     
     # Determine simulation range
-    # We need to simulate from the end of valid history up to the end of our future window
-    last_hist_idx = df_hist.index[-1] # Index in df_hist, but we need index in full_df
-    
-    # Correctly find where history ends in full_df
-    # Since we concat, history is at the beginning. 
-    # Valid history ends where 'y' is not null (assuming future 'y' is NaN or we force it)
-    
     # Ensure future 'y' is NaN
     full_df.loc[len(df_hist):, 'y'] = np.nan
     
