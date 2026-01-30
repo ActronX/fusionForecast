@@ -185,21 +185,16 @@ def plot_intraday_ar():
         yaxis='y'
     ))
     
-    # Context (Actual History)
-    # Filter for valid 'y' in the past (before simulation start)
-    # We use the 'y' column from full_df (which has history)
-    # Note: df_plot comes from forecast (model output). 
-    # The 'y' in forecast might be NaN or simulated.
-    # Let's retrieve actual history from df_hist for clarity.
+    # Context (Actual + Simulated up to now)
+    # Use the 'y' column from forecast, which includes:
+    # - Database values (historical)
+    # - Simulated values from recursive loop (gap-fill up to now)
+    df_context = df_plot[df_plot['ds'] <= now].copy()
     
-    # Filter df_hist for plot window
-    mask_hist = (df_hist['ds'] >= plot_start) & (df_hist['ds'] <= plot_end)
-    df_hist_plot = df_hist.loc[mask_hist].copy()
-    
-    if not df_hist_plot.empty:
+    if not df_context.empty and 'y' in df_context.columns:
         fig.add_trace(go.Scatter(
-             x=df_hist_plot['ds'], 
-             y=df_hist_plot['y'], 
+             x=df_context['ds'], 
+             y=df_context['y'], 
              name='Context (Actual)', 
              line=dict(color='black', width=2),
              opacity=0.7
@@ -225,16 +220,32 @@ def plot_intraday_ar():
                  opacity=0.9
              ))
 
-    # Annotation: Current Time
-    fig.add_vline(x=now.timestamp() * 1000, line_dash="dash", line_color="black", annotation_text="Now")
-
     # Layout
     fig.update_layout(
         title="Intraday Autoregression Impact (+/- 24h)",
         yaxis_title="Correction (Watts)",
-        xaxis_title="Time",
+        xaxis_title="Time (UTC)",
         template="plotly_white",
         hovermode="x unified"
+    )
+    
+    # Add "Now" vertical line as a shape manually to avoid plotly annotation issues
+    fig.add_shape(
+        type="line",
+        x0=now, x1=now,
+        y0=0, y1=1,
+        yref="paper",
+        line=dict(color="black", width=2, dash="dash")
+    )
+    
+    # Add "Now" annotation
+    fig.add_annotation(
+        x=now,
+        y=1.05,
+        yref="paper",
+        text="Now",
+        showarrow=False,
+        font=dict(size=12, color="black")
     )
 
     # Save
