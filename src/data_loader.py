@@ -1,364 +1,327 @@
 """
-Shared data loading functionality for training and tuning.
-Eliminates code duplication between train.py and tune.py.
+Centralized data loading for training, forecasting, and plotting.
+All scaling configuration is applied here - consumers receive data in Watt units.
 """
 
 import pandas as pd
-import sys
 from src.db import InfluxDBWrapper
 from src.config import settings
 from src.preprocess import preprocess_data, prepare_prophet_dataframe
 
 
-def fetch_training_data(verbose: bool = True):
+# ============================================================================
+# Configuration Constants (loaded once)
+# ============================================================================
+
+# InfluxDB Configuration
+BUCKETS = settings['influxdb']['buckets']
+MEASUREMENTS = settings['influxdb']['measurements']
+FIELDS = settings['influxdb']['fields']
+
+# Preprocessing Configuration
+PREPROCESSING = settings['model']['preprocessing']
+MAX_POWER_CLIP = PREPROCESSING.get('max_power_clip', 5400)
+PRODUCED_SCALE = PREPROCESSING.get('produced_scale', 1.0)
+LIVE_SCALE = PREPROCESSING.get('live_scale', 1.0)
+REGRESSOR_SCALE = PREPROCESSING.get('regressor_scale', 1.0)
+PRODUCED_OFFSET = PREPROCESSING.get('produced_offset', '0m')
+REGRESSOR_OFFSET = PREPROCESSING.get('regressor_offset', '0m')
+NIGHT_THRESHOLD = PREPROCESSING.get('night_threshold', 50)
+
+# Model Configuration
+TRAINING_DAYS = settings['model']['training_days']
+
+# Regressor Fields
+REG_CONFIG = FIELDS['regressor_history']
+REGRESSOR_FIELDS = REG_CONFIG if isinstance(REG_CONFIG, list) else [REG_CONFIG]
+
+
+# ============================================================================
+# Helper Functions
+# ============================================================================
+
+def _build_flux_query(bucket, measurement, field, range_start, scale=1.0, offset='0m'):
     """
-    Fetches and prepares training data from InfluxDB.
-    
-    This function is used by both train.py and tune.py to ensure
-    consistent data loading and preprocessing.
+    Build a standard Flux query with scaling and time offset.
     
     Args:
-        verbose: If True, print progress messages.
+        bucket: InfluxDB bucket name
+        measurement: Measurement name
+        field: Field name
+        range_start: Time range start (e.g., '-30d')
+        scale: Scaling factor to apply
+        offset: Time offset to apply
     
     Returns:
-        tuple: (df_prophet, regressor_names) where df_prophet is the merged
-               DataFrame ready for Prophet, and regressor_names is a list
-               of regressor column names.
-        None: If data fetching fails.
+        str: Flux query string
+    """
+    query = f'''
+    from(bucket: "{bucket}")
+      |> range(start: {range_start})
+      |> filter(fn: (r) => r["_measurement"] == "{measurement}")
+      |> filter(fn: (r) => r["_field"] == "{field}")
+    '''
+    
+    if scale != 1.0:
+        query += f'  |> map(fn: (r) => ({{ r with _value: r._value * {scale} }}))\n'
+    
+    if offset != '0m':
+        query += f'  |> timeShift(duration: {offset})\n'
+    
+    query += '  |> pivot(rowKey:["_time"], columnKey: ["_field"], valueColumn: "_value")\n'
+    
+    return query
+
+
+def _fetch_and_prepare(db, query, value_column, error_context, verbose=True):
+    """
+    Execute query, check for empty result, and prepare dataframe.
+    
+    Args:
+        db: InfluxDBWrapper instance
+        query: Flux query string
+        value_column: Column name to use as value
+        error_context: Dict with context info for error messages
+        verbose: Print progress messages
+    
+    Returns:
+        pd.DataFrame or None if empty
+    """
+    df = db.query_dataframe(query)
+    
+    if df.empty:
+        if verbose:
+            print(f"Error: No data found for {error_context['name']}")
+            print(f"  > Bucket: {error_context['bucket']}")
+            print(f"  > Measurement: {error_context['measurement']}")
+            print(f"  > Field: {error_context['field']}")
+        return None
+    
+    df = preprocess_data(df, value_column=value_column, is_prophet_input=True)
+    df = prepare_prophet_dataframe(df, freq='15min')
+    return df
+
+
+# ============================================================================
+# Public Functions
+# ============================================================================
+
+def fetch_training_data(verbose=True):
+    """
+    Fetch and prepare training data from InfluxDB.
+    
+    Args:
+        verbose: Print progress messages
+    
+    Returns:
+        tuple: (df_prophet, regressor_names) where df_prophet contains 'ds', 'y',
+               and regressor columns, all scaled and ready for training
+        None: If data fetching fails
     """
     if verbose:
         print("Fetching training data...")
     
     db = InfluxDBWrapper()
-    training_days = settings['model']['training_days']
-    range_start = f"-{training_days}d"
-
-    # 1. Fetch Produced Data (Target 'y')
+    range_start = f"-{TRAINING_DAYS}d"
+    
+    # 1. Fetch Target Data (Produced)
     if verbose:
-        print(f"Fetching produced data from {settings['influxdb']['buckets']['history_produced']}...")
+        print(f"  - Fetching target data ({TRAINING_DAYS} days)...")
     
-    produced_scale = settings['model']['preprocessing'].get('produced_scale', 1.0)
-    produced_offset = settings['model']['preprocessing'].get('produced_offset', '0m')
+    query_produced = _build_flux_query(
+        bucket=BUCKETS['history_produced'],
+        measurement=MEASUREMENTS['produced'],
+        field=FIELDS['produced'],
+        range_start=range_start,
+        scale=PRODUCED_SCALE,
+        offset=PRODUCED_OFFSET
+    )
     
-    query_produced = f'''
-    from(bucket: "{settings['influxdb']['buckets']['history_produced']}")
-      |> range(start: {range_start})
-      |> filter(fn: (r) => r["_measurement"] == "{settings['influxdb']['measurements']['produced']}")
-      |> filter(fn: (r) => r["_field"] == "{settings['influxdb']['fields']['produced']}")
-      |> map(fn: (r) => ({{ r with _value: r._value * {produced_scale} }}))
-      |> timeShift(duration: {produced_offset})
-      |> pivot(rowKey:["_time"], columnKey: ["_field"], valueColumn: "_value")
-    '''
-    df_produced = db.query_dataframe(query_produced)
+    df_prophet = _fetch_and_prepare(
+        db, query_produced, FIELDS['produced'],
+        error_context={
+            'name': 'training data',
+            'bucket': BUCKETS['history_produced'],
+            'measurement': MEASUREMENTS['produced'],
+            'field': FIELDS['produced']
+        },
+        verbose=verbose
+    )
     
-    if df_produced.empty:
-        print(f"Error: No produced data found for training.")
-        print(f"  > Bucket: {settings['influxdb']['buckets']['history_produced']}")
-        print(f"  > Measurement: {settings['influxdb']['measurements']['produced']}")
-        print(f"  > Field: {settings['influxdb']['fields']['produced']}")
-        print("  > Possible causes: Data missing in time range, or incorrect measurement/field names.")
+    if df_prophet is None:
         return None
-
-    # Preprocess Produced
-    df_prophet = preprocess_data(df_produced, value_column=settings['influxdb']['fields']['produced'], is_prophet_input=True)
-    df_prophet = prepare_prophet_dataframe(df_prophet, freq='15min')
-
-    # 2. Fetch Regressor Data (History)
+    
+    # 2. Fetch Regressor Data
     if verbose:
-        print(f"Fetching regressor data from {settings['influxdb']['buckets']['regressor_history']}...")
+        print(f"  - Fetching {len(REGRESSOR_FIELDS)} regressors...")
     
-    regressor_offset = settings['model']['preprocessing'].get('regressor_offset', '0m')
-    regressor_scale = settings['model']['preprocessing'].get('regressor_scale', 1.0)
+    regressor_filter = " or ".join([f'r["_field"] == "{f}"' for f in REGRESSOR_FIELDS])
     
-    # Handle list or string for compatibility
-    reg_config = settings['influxdb']['fields']['regressor_history']
-    if isinstance(reg_config, list):
-        regressor_fields = reg_config
-    else:
-        regressor_fields = [reg_config]
-    
-    if verbose:
-        print(f"Using regressor fields: {regressor_fields}")
-    
-    # Filter for all requested regressor fields
-    regressor_filter = " or ".join([f'r["_field"] == "{f}"' for f in regressor_fields])
-    
-    query_regressor = f'''
-    from(bucket: "{settings['influxdb']['buckets']['regressor_history']}")
+    query_regressors = f'''
+    from(bucket: "{BUCKETS['regressor_history']}")
       |> range(start: {range_start})
-      |> filter(fn: (r) => r["_measurement"] == "{settings['influxdb']['measurements']['regressor_history']}")
+      |> filter(fn: (r) => r["_measurement"] == "{MEASUREMENTS['regressor_history']}")
       |> filter(fn: (r) => {regressor_filter})
-      |> map(fn: (r) => ({{ r with _value: r._value * {regressor_scale} }}))
-      |> timeShift(duration: {regressor_offset})
+      |> map(fn: (r) => ({{ r with _value: r._value * {REGRESSOR_SCALE} }}))
+      |> timeShift(duration: {REGRESSOR_OFFSET})
       |> pivot(rowKey:["_time"], columnKey: ["_field"], valueColumn: "_value")
     '''
-    df_regressor = db.query_dataframe(query_regressor)
     
-    if df_regressor.empty:
-        print("Error: No regressor data found.")
-        print(f"  > Bucket: {settings['influxdb']['buckets']['regressor_history']}")
-        print(f"  > Measurement: {settings['influxdb']['measurements']['regressor_history']}")
-        print(f"  > Fields: {regressor_fields}")
+    df_regressors = db.query_dataframe(query_regressors)
+    
+    if df_regressors.empty:
+        print("Error: No regressor data found")
         return None
-
-    # Preprocess Regressor
-    df_regressor = prepare_prophet_dataframe(df_regressor, freq='15min')
     
-    # Interpolate regressor fields
-    regressor_names = []
-    for field in regressor_fields:
-        if field not in df_regressor.columns:
-            print(f"Warning: Regressor field '{field}' missing in fetched data. Filling with 0.")
-            df_regressor[field] = 0.0
-            
-        df_regressor[field] = df_regressor[field].interpolate(method='linear', limit_direction='both')
-        regressor_names.append(field)
-
-    # 3. Merge on 'ds'
-    df_prophet = pd.merge(df_prophet, df_regressor[['ds'] + regressor_names], on='ds', how='inner')
-    df_prophet.dropna(inplace=True)
+    # Prepare and merge
+    df_regressors = prepare_prophet_dataframe(df_regressors, freq='15min')
+    cols_to_keep = ['ds'] + [c for c in df_regressors.columns if c in REGRESSOR_FIELDS]
+    df_regressors = df_regressors[cols_to_keep]
     
-    if verbose:
-        print(f"Training data shape after merge: {df_prophet.shape}")
+    df_prophet = pd.merge(df_prophet, df_regressors, on='ds', how='inner')
     
     if df_prophet.empty:
-        print("Error: Training data empty after merging regressor. Check time alignment.")
+        print("Error: Training data empty after merging. Check time alignment.")
         return None
     
-    # 4. Fetch lagged regressor data (e.g., Production_W for real-time correction)
-    lagged_reg_config = settings['model']['neuralprophet'].get('lagged_regressors', {})
-    if lagged_reg_config:
-        if verbose:
-            print(f"Fetching lagged regressor data from {settings['influxdb']['buckets']['live']}...")
-        
-        # Fetch Production_W from live bucket
-        if 'Production_W' in lagged_reg_config:
-            query_production = f'''
-            from(bucket: "{settings['influxdb']['buckets']['live']}")
-              |> range(start: {range_start})
-              |> filter(fn: (r) => r["_measurement"] == "{settings['influxdb']['measurements']['live']}")
-              |> filter(fn: (r) => r["_field"] == "{settings['influxdb']['fields']['live']}")
-              |> pivot(rowKey:["_time"], columnKey: ["_field"], valueColumn: "_value")
-            '''
-            df_production = db.query_dataframe(query_production)
-            
-            if not df_production.empty:
-                df_production = prepare_prophet_dataframe(df_production, freq='15min')
-                df_production.rename(columns={settings['influxdb']['fields']['live']: 'Production_W'}, inplace=True)
-                
-                # Merge with main dataframe
-                df_prophet = pd.merge(df_prophet, df_production[['ds', 'Production_W']], on='ds', how='left')
-                df_prophet['Production_W'] = df_prophet['Production_W'].fillna(0)  # Fill missing with 0
-                
-                if verbose:
-                    print(f"Added Production_W column for lagged regressor (shape: {df_prophet.shape})")
-            else:
-                print("Warning: No Production_W data found. Lagged regressor will be skipped during training.")
-                df_prophet['Production_W'] = 0.0  # Add column with zeros as fallback
-
-    return df_prophet, regressor_names
+    if verbose:
+        print(f"  ✓ Loaded {len(df_prophet)} samples successfully")
+    
+    return df_prophet, REGRESSOR_FIELDS
 
 
-
-def validate_data_sufficiency(df: pd.DataFrame, required_days: int, tolerance: float = 0.9) -> bool:
+def validate_data_sufficiency(df, required_days, tolerance=0.9):
     """
-    Validates that the DataFrame contains sufficient historical data.
+    Validate that DataFrame contains sufficient historical data.
     
     Args:
-        df: DataFrame with 'ds' column.
-        required_days: Number of days required.
-        tolerance: Minimum fraction of required days (default 0.9 = 90%).
+        df: DataFrame with 'ds' column
+        required_days: Number of days required
+        tolerance: Minimum fraction of required days (default 0.9 = 90%)
     
     Returns:
-        bool: True if sufficient data, False otherwise.
+        bool: True if sufficient data, False otherwise
     """
-    data_duration_days = (df['ds'].max() - df['ds'].min()).days
-    
-    if data_duration_days < (required_days * tolerance):
-        print(f"Error: Insufficient historical data.")
-        print(f"  > Requested: {required_days} days")
-        print(f"  > Available: {data_duration_days} days")
-        print("  > Please ensure buckets contain enough history or reduce 'training_days' in settings.toml")
+    if df.empty or 'ds' not in df.columns:
         return False
     
-    return True
+    date_range = (df['ds'].max() - df['ds'].min()).days
+    return date_range >= (required_days * tolerance)
 
 
-def fetch_intraday_data(db: InfluxDBWrapper, fetch_hours: float, regressor_fields: list) -> pd.DataFrame:
+def fetch_intraday_data(db, fetch_hours, regressor_fields):
     """
-    Fetches intraday historical data (target + regressors) for autoregression context.
+    Fetch intraday historical data for autoregression context.
+    
+    Loads last N hours of target + regressors from live bucket (with fallback to stats).
+    All data is scaled to Watt units.
     
     Args:
         db: InfluxDBWrapper instance
         fetch_hours: Number of hours of history to fetch
-        regressor_fields: List of regressor field names to include
-        
-    Returns:
-        pd.DataFrame: Prepared historical dataframe (resampled to 15min, gap-filled)
-    """
-    # Fetch historical target data from live bucket
-    live_bucket = settings['influxdb']['buckets']['live']
-    live_meas = settings['influxdb']['measurements']['live']
-    live_field = settings['influxdb']['fields']['live']
+        regressor_fields: List of regressor field names
     
-    query_history_y = f'''
+    Returns:
+        pd.DataFrame: Historical dataframe with 'ds', 'y', and regressor columns
+    """
+    # Fetch target from live bucket (with live_scale)
+    query_target = f'''
     import "date"
-    from(bucket: "{live_bucket}")
+    from(bucket: "{BUCKETS['live']}")
       |> range(start: date.sub(d: {int(fetch_hours)}h, from: now()), stop: now())
-      |> filter(fn: (r) => r["_measurement"] == "{live_meas}")
-      |> filter(fn: (r) => r["_field"] == "{live_field}")
+      |> filter(fn: (r) => r["_measurement"] == "{MEASUREMENTS['live']}")
+      |> filter(fn: (r) => r["_field"] == "{FIELDS['live']}")
+      |> map(fn: (r) => ({{ r with _value: r._value * {LIVE_SCALE} }}))
       |> pivot(rowKey:["_time"], columnKey: ["_field"], valueColumn: "_value")
     '''
-    df_hist_y = db.query_dataframe(query_history_y)
     
-    y_col = live_field
+    df_target = db.query_dataframe(query_target)
+    target_field = FIELDS['live']
     
-    # Fallback to stats bucket if live data is unavailable
-    if df_hist_y.empty:
+    # Fallback to stats bucket if live is unavailable
+    if df_target.empty:
         print(f"Warning: Live data unavailable. Using stats bucket.")
-        target_field = settings['influxdb']['fields']['produced']
-        target_meas = settings['influxdb']['measurements']['produced']
-        target_bucket = settings['influxdb']['buckets']['history_produced']
-        prod_scale = settings['model']['preprocessing'].get('produced_scale', 1.0)
         
-        query_history_y = f'''
-        import "date"
-        from(bucket: "{target_bucket}")
-          |> range(start: date.sub(d: {int(fetch_hours)}h, from: now()), stop: now())
-          |> filter(fn: (r) => r["_measurement"] == "{target_meas}")
-          |> filter(fn: (r) => r["_field"] == "{target_field}")
-          |> map(fn: (r) => ({{ r with _value: r._value * {prod_scale} }}))
-          |> pivot(rowKey:["_time"], columnKey: ["_field"], valueColumn: "_value")
-        '''
-        df_hist_y = db.query_dataframe(query_history_y)
-        y_col = target_field
-
-    if df_hist_y.empty:
+        query_target = _build_flux_query(
+            bucket=BUCKETS['history_produced'],
+            measurement=MEASUREMENTS['produced'],
+            field=FIELDS['produced'],
+            range_start=f'-{int(fetch_hours)}h',
+            scale=PRODUCED_SCALE
+        )
+        
+        df_target = db.query_dataframe(query_target)
+        target_field = FIELDS['produced']
+    
+    if df_target.empty:
         print("Error: No historical target data found (Live or Stats).")
         return pd.DataFrame()
-
-    # Fetch historical regressors to match the target history
-    reg_hist_bucket = settings['influxdb']['buckets']['regressor_history']
-    reg_hist_meas = settings['influxdb']['measurements']['regressor_history']
-    regressor_scale = settings['model']['preprocessing'].get('regressor_scale', 1.0)
     
-    field_filters_hist = ' or '.join([f'r["_field"] == "{f}"' for f in regressor_fields])
+    # Prepare target
+    df_hist = preprocess_data(df_target, value_column=target_field, is_prophet_input=True)
+    df_hist = prepare_prophet_dataframe(df_hist, freq='15min')
     
-    query_history_reg = f'''
+    # Fetch regressors
+    regressor_filter = " or ".join([f'r["_field"] == "{f}"' for f in regressor_fields])
+    
+    query_regressors = f'''
     import "date"
-    from(bucket: "{reg_hist_bucket}")
+    from(bucket: "{BUCKETS['regressor_history']}")
       |> range(start: date.sub(d: {int(fetch_hours)}h, from: now()), stop: now())
-      |> filter(fn: (r) => r["_measurement"] == "{reg_hist_meas}")
-      |> filter(fn: (r) => {field_filters_hist})
-      |> map(fn: (r) => ({{ r with _value: r._value * {regressor_scale} }}))
+      |> filter(fn: (r) => r["_measurement"] == "{MEASUREMENTS['regressor_history']}")
+      |> filter(fn: (r) => {regressor_filter})
+      |> map(fn: (r) => ({{ r with _value: r._value * {REGRESSOR_SCALE} }}))
       |> pivot(rowKey:["_time"], columnKey: ["_field"], valueColumn: "_value")
     '''
-    df_hist_reg = db.query_dataframe(query_history_reg)
     
-    # Process and merge
-    df_history = prepare_prophet_dataframe(df_hist_y, freq='15min')
+    df_regressors = db.query_dataframe(query_regressors)
     
-    if not df_hist_reg.empty:
-        df_hist_reg = prepare_prophet_dataframe(df_hist_reg, freq='15min')
-        df_history = pd.merge(df_history, df_hist_reg, on='ds', how='inner')
-    else:
-        print("Warning: No historical regressor data found. AR context may lack features.")
+    if not df_regressors.empty:
+        df_regressors = prepare_prophet_dataframe(df_regressors, freq='15min')
+        cols_to_keep = ['ds'] + [c for c in df_regressors.columns if c in regressor_fields]
+        df_regressors = df_regressors[cols_to_keep]
+        df_hist = pd.merge(df_hist, df_regressors, on='ds', how='outer')
     
-    # Rename target column
-    if y_col in df_history.columns:
-        df_history.rename(columns={y_col: 'y'}, inplace=True)
-        
-    # Resample to ensure continuous 15-minute intervals and fill gaps
-    df_history_final = df_history.copy()
-    df_history_final['ds'] = pd.to_datetime(df_history_final['ds'])
+    # Fill gaps
+    df_hist = df_hist.set_index('ds').resample('15min').interpolate(method='linear').reset_index()
+    df_hist = df_hist.sort_values('ds').reset_index(drop=True)
     
-    # Determine the latest timestamp before resampling for logging
-    last_raw_ts = df_history_final['ds'].max()
-    print(f"Latest historical data point (raw): {last_raw_ts}")
-    
-    df_history_final = df_history_final.set_index('ds').resample('15min').mean()
-    df_history_final = df_history_final.fillna(0)
-    df_history_final = df_history_final.reset_index()
-    
-    # Build column list: ds, y, regressors
-    # We want to keep all regressor fields plus 'y' and 'ds'
-    columns_to_keep = ['ds', 'y'] 
-    for r in regressor_fields:
-        if r not in df_history_final.columns:
-             print(f"Warning: Missing regressor {r} in history. Filling with 0.")
-             df_history_final[r] = 0.0
-        else:
-             df_history_final[r] = df_history_final[r].interpolate(method='linear', limit_direction='both')
-        columns_to_keep.append(r)
-
-    # Filter columns
-    df_history_final = df_history_final[[c for c in columns_to_keep if c in df_history_final.columns]].copy()
-    
-    last_resampled_ts = df_history_final['ds'].max()
-    print(f"Loaded {len(df_history_final)} historical data points. Latest (resampled): {last_resampled_ts}")
-    
-    # Warn if data is old (e.g. > 45 mins)
-    # InfluxDB returns UTC (often naive), so we compare against UTC
-    now_check = pd.Timestamp.utcnow().replace(tzinfo=None)
-    if last_resampled_ts is not pd.NaT:
-         # If dataframe is tz-aware, make now_check aware too, otherwise keep naive
-         if last_resampled_ts.tzinfo is not None:
-             now_check = pd.Timestamp.utcnow()
-
-         age = (now_check - last_resampled_ts).total_seconds() / 60
-         if age > 45:
-            print(f"WARNING: Historical data is {age:.1f} minutes old! Intraday correction may be outdated.")
-            
-    return df_history_final
+    return df_hist
 
 
-def fetch_future_regressors(db: InfluxDBWrapper, forecast_days: int) -> pd.DataFrame:
+def fetch_future_regressors(db, forecast_days):
     """
-    Fetches future regressor data (weather forecast) for prediction.
+    Fetch future regressor data (weather forecast) for prediction.
     
     Args:
         db: InfluxDBWrapper instance
         forecast_days: Number of days to fetch forecast for
-        
+    
     Returns:
-        pd.DataFrame: Prepared future dataframe (resampled to 15min, gap-filled, interpolated)
+        pd.DataFrame: Future dataframe with 'ds' and regressor columns
     """
-    print(f"Fetching regressor data for next {forecast_days} days...")
+    regressor_filter = " or ".join([f'r["_field"] == "{f}"' for f in REGRESSOR_FIELDS])
     
-    regressor_scale = settings['model']['preprocessing'].get('regressor_scale', 1.0)
-    regressor_fields_config = settings['influxdb']['fields']['regressor_future']
-    regressor_fields = regressor_fields_config if isinstance(regressor_fields_config, list) else [regressor_fields_config]
-    
-    # Build Flux query for future regressors
-    field_filters = ' or '.join([f'r["_field"] == "{f}"' for f in regressor_fields])
-    query_regressor = f'''
-    import "date"
-    from(bucket: "{settings['influxdb']['buckets']['regressor_future']}")
-      |> range(start: now(), stop: date.add(d: {forecast_days}d, to: now()))
-      |> filter(fn: (r) => r["_measurement"] == "{settings['influxdb']['measurements']['regressor_future']}")
-      |> filter(fn: (r) => {field_filters})
-      |> map(fn: (r) => ({{ r with _value: r._value * {regressor_scale} }}))
+    query_future = f'''
+    from(bucket: "{BUCKETS['regressor_future']}")
+      |> range(start: -1h, stop: {forecast_days}d)
+      |> filter(fn: (r) => r["_measurement"] == "{MEASUREMENTS['regressor_future']}")
+      |> filter(fn: (r) => {regressor_filter})
+      |> map(fn: (r) => ({{ r with _value: r._value * {REGRESSOR_SCALE} }}))
       |> pivot(rowKey:["_time"], columnKey: ["_field"], valueColumn: "_value")
     '''
-    df_future = db.query_dataframe(query_regressor)
+    
+    df_future = db.query_dataframe(query_future)
     
     if df_future.empty:
-        print("Error: No future regressor data found.")
         return pd.DataFrame()
-
+    
     df_future = prepare_prophet_dataframe(df_future, freq='15min')
+    cols_to_keep = ['ds'] + [c for c in df_future.columns if c in REGRESSOR_FIELDS]
+    df_future = df_future[cols_to_keep]
     
-    # Interpolate and prepare regressor columns
-    regressor_names = []
-    for field in regressor_fields:
-        if field not in df_future.columns:
-             print(f"Warning: Future regressor field '{field}' missing. Filling with 0.")
-             df_future[field] = 0.0
-        df_future[field] = df_future[field].interpolate(method='linear', limit_direction='both')
-        regressor_names.append(field)
+    # Interpolate to ensure no gaps
+    df_future = df_future.set_index('ds').resample('15min').interpolate(method='linear').reset_index()
+    df_future = df_future.sort_values('ds').reset_index(drop=True)
     
-    # Return dataframe with ds and regressors only
-    df_future_final = df_future[['ds'] + regressor_names].copy()
-    
-    return df_future_final
-
+    return df_future
