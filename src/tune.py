@@ -63,12 +63,12 @@ def run_tuning():
     # 2. Define Parameter Grid
     # Testing interaction between Model Capacity (ar_layers) and Regularization (ar_reg)
     param_grid = {
-        'n_lags': [96],
+        'n_lags': [4, 8, 12, 24, 96],      # Test: 1h, 2h, 3h, 6h, 24h context
         'n_forecasts': [96],
         'ar_layers': [[]],                  # Fixed: Linear Model
         'ar_reg': [0.05],                   # Fixed: Good baseline
         'learning_rate': [0.01],            # Fixed: Good baseline
-        'seasonality_mode': ['additive', 'multiplicative'],
+        'seasonality_mode': ['additive'],   # Fixed: Validated as better
     }
 
     # Generate all combinations
@@ -106,22 +106,93 @@ def run_tuning():
             for reg in regressor_names:
                 m.add_future_regressor(name=reg, mode=params['seasonality_mode'])
 
-            # Train-Test Split (Last 7 days for validation)
-            # Use split_df for simple validation to save time. 
-            # Could use crossvalidation_split_df for more robustness but slower.
-            df_train, df_val = m.split_df(df, freq='15min', valid_p=0.1)
-
-            # Train
-            metrics = m.fit(df_train, freq='15min', validation_df=df_val, progress='bar')
+            # 3-Fold Cross-Validation for robust evaluation
+            # Test on different time periods to avoid statistical outliers
+            n_folds = 3
+            fold_scores = []
+            fold_rmse = []
+            fold_mae = []
             
-            # Get best validation loss
-            val_loss = metrics['Loss_val'].min()
+            total_len = len(df)
+            fold_size = total_len // (n_folds + 1)  # Reserve space for each fold
             
-            print(f"  > Best Val Loss: {val_loss:.5f}")
+            for fold in range(n_folds):
+                # Create different validation windows
+                # Fold 0: Early period, Fold 1: Middle period, Fold 2: Late period
+                val_start = fold_size * (fold + 1) - fold_size // 2
+                val_end = val_start + fold_size
+                
+                df_val_fold = df.iloc[val_start:val_end].copy()
+                df_train_fold = pd.concat([df.iloc[:val_start], df.iloc[val_end:]]).copy()
+                
+                # Reinitialize model for each fold
+                m_fold = NeuralProphet(
+                    n_lags=params['n_lags'],
+                    n_forecasts=params['n_forecasts'],
+                    ar_layers=params['ar_layers'],
+                    ar_reg=params['ar_reg'],
+                    learning_rate=params['learning_rate'],
+                    yearly_seasonality=settings['model']['neuralprophet']['yearly_seasonality'],
+                    weekly_seasonality=settings['model']['neuralprophet']['weekly_seasonality'],
+                    daily_seasonality=settings['model']['neuralprophet']['daily_seasonality'],
+                    seasonality_mode=params['seasonality_mode'],
+                    loss_func="Huber",
+                    drop_missing=True,
+                )
+                
+                for reg in regressor_names:
+                    m_fold.add_future_regressor(name=reg, mode=params['seasonality_mode'])
+                
+                # Train
+                m_fold.fit(df_train_fold, freq='15min', progress='bar')
+                
+                # Predict
+                forecast = m_fold.predict(df_val_fold)
+                
+                # Merge on 'ds' to handle length mismatch
+                merged = pd.merge(df_val_fold[['ds', 'y']], forecast[['ds', 'yhat1']], on='ds', how='inner')
+                y_true = merged['y'].values
+                y_pred = merged['yhat1'].values
+                
+                mask = ~np.isnan(y_true) & ~np.isnan(y_pred) & (y_true != 0)
+                y_true_clean = y_true[mask]
+                y_pred_clean = y_pred[mask]
+                
+                if len(y_true_clean) == 0:
+                    continue
+                
+                rmse = np.sqrt(np.mean((y_true_clean - y_pred_clean) ** 2))
+                mae = np.mean(np.abs(y_true_clean - y_pred_clean))
+                max_power = settings['model']['preprocessing']['max_power_clip']
+                nrmse = rmse / max_power
+                nmae = mae / max_power
+                score = 0.5 * nrmse + 0.5 * nmae
+                
+                fold_scores.append(score)
+                fold_rmse.append(rmse)
+                fold_mae.append(mae)
+                print(f"    Fold {fold+1}: Score={score:.4f}, RMSE={rmse:.2f}, MAE={mae:.2f}")
+            
+            if len(fold_scores) == 0:
+                print(f"  > Warning: No valid predictions for metrics")
+                continue
+            
+            # Average across folds
+            avg_score = np.mean(fold_scores)
+            std_score = np.std(fold_scores)
+            avg_rmse = np.mean(fold_rmse)
+            avg_mae = np.mean(fold_mae)
+            
+            print(f"  > AVG Score: {avg_score:.4f} ± {std_score:.4f}, RMSE: {avg_rmse:.2f}, MAE: {avg_mae:.2f}")
             
             results.append({
                 **params,
-                'val_loss': val_loss
+                'rmse': avg_rmse,
+                'mae': avg_mae,
+                'nrmse': avg_rmse / max_power,
+                'nmae': avg_mae / max_power,
+                'score': avg_score,
+                'score_std': std_score
             })
 
         except Exception as e:
@@ -129,16 +200,16 @@ def run_tuning():
 
     # 4. Analysis
     print("----------------------------------------------------------------")
-    print("Tuning Completed. Top 3 Configurations:")
+    print("Tuning Completed. All Configurations (sorted by Score, lower is better):")
     
     if not results:
         print("No results generated.")
         return
 
     results_df = pd.DataFrame(results)
-    results_df = results_df.sort_values('val_loss')
+    results_df = results_df.sort_values('score').reset_index(drop=True)
     
-    print(results_df.head(3))
+    print(results_df.to_string())
     
     # Save results
     results_df.to_csv("tuning_results.csv", index=False)
