@@ -39,7 +39,7 @@ from src.data_loader import fetch_intraday_data, fetch_future_regressors
 # Configuration
 # ============================================================================
 
-HISTORY_HOURS = 48  # Fetch 48h of history for context
+# HISTORY_HOURS is now calculated dynamically from model's n_lags
 FUTURE_DAYS = 1     # Predict 1 day ahead
 PLOT_WINDOW_HOURS = 24  # Show +/- 24h from now
 
@@ -89,7 +89,7 @@ def prepare_full_dataframe(df_hist, df_future):
     return full_df
 
 
-def simulate_future(model, full_df, n_forecasts):
+def simulate_future(model, full_df):
     """
     Recursively simulate future predictions.
     
@@ -98,7 +98,6 @@ def simulate_future(model, full_df, n_forecasts):
     Args:
         model: NeuralProphet model
         full_df: Combined historical + future dataframe
-        n_forecasts: Model's n_forecasts parameter
     
     Returns:
         pd.DataFrame: Dataframe with simulated 'y' values
@@ -307,14 +306,18 @@ def plot_intraday_ar():
     if n_lags == 0:
         raise ValueError("Model does not use autoregression (n_lags=0)")
     
+    # Calculate history hours dynamically from n_lags (with 2x safety buffer)
+    hours_needed = (n_lags * 15) / 60  # n_lags * 15min -> hours
+    history_hours = max(24, int(hours_needed * 2))  # At least 24h, with 2x buffer
+    
     # 2. Fetch Data
-    print(f"Fetching data (History: {HISTORY_HOURS}h, Future: {FUTURE_DAYS}d)...")
+    print(f"Fetching data (History: {history_hours}h based on n_lags={n_lags}, Future: {FUTURE_DAYS}d)...")
     db = InfluxDBWrapper()
     
     reg_config = settings['influxdb']['fields']['regressor_history']
     regressor_fields = reg_config if isinstance(reg_config, list) else [reg_config]
     
-    df_hist = fetch_intraday_data(db, HISTORY_HOURS, regressor_fields)
+    df_hist = fetch_intraday_data(db, history_hours, regressor_fields)
     df_future = fetch_future_regressors(db, FUTURE_DAYS)
     
     if df_hist.empty or df_future.empty:
@@ -325,7 +328,7 @@ def plot_intraday_ar():
     full_df = prepare_full_dataframe(df_hist, df_future)
     
     # 4. Simulate Future (Recursive AR)
-    simulated_df = simulate_future(model, full_df, n_forecasts)
+    simulated_df = simulate_future(model, full_df)
     
     # 5. Pad and Generate Forecast
     print(f"Padding with {n_forecasts} rows to prevent truncation...")
@@ -347,6 +350,23 @@ def plot_intraday_ar():
     
     print(f"Plot window: {df_plot['ds'].min()} to {df_plot['ds'].max()}")
     
+    # Debug AR values
+    print(f"AR Column detected: {ar_col}")
+    if ar_col is not None:
+        ar_values = df_plot[ar_col].dropna()
+        if ar_values.empty:
+            print("WARNING: AR column is empty!")
+        else:
+            ar_mean = ar_values.abs().mean()
+            ar_max = ar_values.abs().max()
+            ar_min_val = ar_values.min()
+            ar_max_val = ar_values.max()
+            print(f"AR Stats in window - Mean Abs: {ar_mean:.4f}, Max Abs: {ar_max:.4f}")
+            print(f"AR Range: {ar_min_val:.4f} to {ar_max_val:.4f}")
+            print("First 5 AR values:")
+            print(df_plot[['ds', ar_col]].head().to_string())
+
+      
     # 8. Calculate Baseline
     df_plot = calculate_baseline(df_plot, ar_col)
     
@@ -354,10 +374,14 @@ def plot_intraday_ar():
     print("Creating visualization...")
     fig = create_plot(df_plot, ar_col, now)
     
+    # Debug Baseline vs Forecast
+    print(f"Baseline (No AR) Mean: {df_plot['yhat_baseline'].mean():.4f}")
+    print(f"Forecast (With AR) Mean: {df_plot['yhat1'].mean():.4f}")
+    
     # 10. Save and Open
     output_file = os.path.abspath("plot_intraday_ar.html")
     fig.write_html(output_file)
-    print(f"✓ Saved to: {output_file}")
+    print(f"[OK] Saved to: {output_file}")
     
     webbrowser.open(f"file://{output_file}")
     print("=" * 70)

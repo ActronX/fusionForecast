@@ -4,6 +4,7 @@ All scaling configuration is applied here - consumers receive data in Watt units
 """
 
 import pandas as pd
+import numpy as np
 from src.db import InfluxDBWrapper
 from src.config import settings
 from src.preprocess import preprocess_data, prepare_prophet_dataframe
@@ -40,35 +41,66 @@ REGRESSOR_FIELDS = REG_CONFIG if isinstance(REG_CONFIG, list) else [REG_CONFIG]
 # Helper Functions
 # ============================================================================
 
-def _build_flux_query(bucket, measurement, field, range_start, scale=1.0, offset='0m'):
+def _build_flux_query(bucket, measurement, fields, range_start, range_stop=None, 
+                      scale=1.0, offset='0m', interpolate=False, verbose=True):
     """
-    Build a standard Flux query with scaling and time offset.
+    Build a standard Flux query with scaling, time offset, and optional interpolation.
     
     Args:
         bucket: InfluxDB bucket name
         measurement: Measurement name
-        field: Field name
-        range_start: Time range start (e.g., '-30d')
+        fields: Field name (str) or list of field names
+        range_start: Time range start (e.g., '-30d' or 'date.sub(d: 48h, from: now())')
+        range_stop: Time range stop (e.g., 'now()' or '14d'), default None
         scale: Scaling factor to apply
         offset: Time offset to apply
+        interpolate: If True, use aggregateWindow and fill to interpolate
+        verbose: If True, print the generated query
     
     Returns:
         str: Flux query string
     """
+    # Handle single field or list of fields
+    if isinstance(fields, str):
+        field_filter = f'r["_field"] == "{fields}"'
+    else:
+        field_filter = " or ".join([f'r["_field"] == "{f}"' for f in fields])
+    
+    # Build range clause
+    if range_stop:
+        range_clause = f'range(start: {range_start}, stop: {range_stop})'
+    elif interpolate:
+        range_clause = f'range(start: {range_start}, stop: now())'
+    else:
+        range_clause = f'range(start: {range_start})'
+    
+    # Check if we need date import for dynamic time expressions
+    needs_date_import = 'date.sub' in range_start or (range_stop and 'date.' in range_stop)
+    import_stmt = 'import "date"\n    ' if needs_date_import else ''
+    
     query = f'''
-    from(bucket: "{bucket}")
-      |> range(start: {range_start})
+    {import_stmt}from(bucket: "{bucket}")
+      |> {range_clause}
       |> filter(fn: (r) => r["_measurement"] == "{measurement}")
-      |> filter(fn: (r) => r["_field"] == "{field}")
+      |> filter(fn: (r) => {field_filter})
     '''
     
     if scale != 1.0:
         query += f'  |> map(fn: (r) => ({{ r with _value: r._value * {scale} }}))\n'
     
+    # Add interpolation: create 15-min windows and forward-fill missing values
+    if interpolate:
+        query += '  |> aggregateWindow(every: 15m, fn: mean, createEmpty: true)\n'
+        query += '  |> fill(usePrevious: true)\n'
+    
     if offset != '0m':
         query += f'  |> timeShift(duration: {offset})\n'
     
     query += '  |> pivot(rowKey:["_time"], columnKey: ["_field"], valueColumn: "_value")\n'
+    query += '  |> unique(column: "_time")\n'
+    
+    if verbose:
+        print(f"[FLUX QUERY]\n{query.strip()}")
     
     return query
 
@@ -131,10 +163,11 @@ def fetch_training_data(verbose=True):
     query_produced = _build_flux_query(
         bucket=BUCKETS['history_produced'],
         measurement=MEASUREMENTS['produced'],
-        field=FIELDS['produced'],
+        fields=FIELDS['produced'],
         range_start=range_start,
         scale=PRODUCED_SCALE,
-        offset=PRODUCED_OFFSET
+        offset=PRODUCED_OFFSET,
+        verbose=verbose
     )
     
     df_prophet = _fetch_and_prepare(
@@ -155,17 +188,15 @@ def fetch_training_data(verbose=True):
     if verbose:
         print(f"  - Fetching {len(REGRESSOR_FIELDS)} regressors...")
     
-    regressor_filter = " or ".join([f'r["_field"] == "{f}"' for f in REGRESSOR_FIELDS])
-    
-    query_regressors = f'''
-    from(bucket: "{BUCKETS['regressor_history']}")
-      |> range(start: {range_start})
-      |> filter(fn: (r) => r["_measurement"] == "{MEASUREMENTS['regressor_history']}")
-      |> filter(fn: (r) => {regressor_filter})
-      |> map(fn: (r) => ({{ r with _value: r._value * {REGRESSOR_SCALE} }}))
-      |> timeShift(duration: {REGRESSOR_OFFSET})
-      |> pivot(rowKey:["_time"], columnKey: ["_field"], valueColumn: "_value")
-    '''
+    query_regressors = _build_flux_query(
+        bucket=BUCKETS['regressor_history'],
+        measurement=MEASUREMENTS['regressor_history'],
+        fields=REGRESSOR_FIELDS,
+        range_start=range_start,
+        scale=REGRESSOR_SCALE,
+        offset=REGRESSOR_OFFSET,
+        verbose=verbose
+    )
     
     df_regressors = db.query_dataframe(query_regressors)
     
@@ -224,30 +255,32 @@ def fetch_intraday_data(db, fetch_hours, regressor_fields):
     Returns:
         pd.DataFrame: Historical dataframe with 'ds', 'y', and regressor columns
     """
-    # Fetch target from live bucket (with live_scale)
-    query_target = f'''
-    import "date"
-    from(bucket: "{BUCKETS['live']}")
-      |> range(start: date.sub(d: {int(fetch_hours)}h, from: now()), stop: now())
-      |> filter(fn: (r) => r["_measurement"] == "{MEASUREMENTS['live']}")
-      |> filter(fn: (r) => r["_field"] == "{FIELDS['live']}")
-      |> map(fn: (r) => ({{ r with _value: r._value * {LIVE_SCALE} }}))
-      |> pivot(rowKey:["_time"], columnKey: ["_field"], valueColumn: "_value")
-    '''
+    # Fetch target from live bucket (with live_scale and interpolation)
+    query_target = _build_flux_query(
+        bucket=BUCKETS['live'],
+        measurement=MEASUREMENTS['live'],
+        fields=FIELDS['live'],
+        range_start=f'date.sub(d: {int(fetch_hours)}h, from: now())',
+        range_stop='now()',
+        scale=LIVE_SCALE,
+        interpolate=True
+    )
     
     df_target = db.query_dataframe(query_target)
     target_field = FIELDS['live']
     
     # Fallback to stats bucket if live is unavailable
     if df_target.empty:
-        print(f"Warning: Live data unavailable. Using stats bucket.")
+        print(f"Warning: Live data unavailable. Using stats bucket with interpolation.")
         
         query_target = _build_flux_query(
             bucket=BUCKETS['history_produced'],
             measurement=MEASUREMENTS['produced'],
-            field=FIELDS['produced'],
+            fields=FIELDS['produced'],
             range_start=f'-{int(fetch_hours)}h',
-            scale=PRODUCED_SCALE
+            scale=PRODUCED_SCALE,
+            offset=PRODUCED_OFFSET,
+            interpolate=True
         )
         
         df_target = db.query_dataframe(query_target)
@@ -261,18 +294,16 @@ def fetch_intraday_data(db, fetch_hours, regressor_fields):
     df_hist = preprocess_data(df_target, value_column=target_field, is_prophet_input=True)
     df_hist = prepare_prophet_dataframe(df_hist, freq='15min')
     
-    # Fetch regressors
-    regressor_filter = " or ".join([f'r["_field"] == "{f}"' for f in regressor_fields])
-    
-    query_regressors = f'''
-    import "date"
-    from(bucket: "{BUCKETS['regressor_history']}")
-      |> range(start: date.sub(d: {int(fetch_hours)}h, from: now()), stop: now())
-      |> filter(fn: (r) => r["_measurement"] == "{MEASUREMENTS['regressor_history']}")
-      |> filter(fn: (r) => {regressor_filter})
-      |> map(fn: (r) => ({{ r with _value: r._value * {REGRESSOR_SCALE} }}))
-      |> pivot(rowKey:["_time"], columnKey: ["_field"], valueColumn: "_value")
-    '''
+    # Fetch regressors (with interpolation)
+    query_regressors = _build_flux_query(
+        bucket=BUCKETS['regressor_history'],
+        measurement=MEASUREMENTS['regressor_history'],
+        fields=regressor_fields,
+        range_start=f'date.sub(d: {int(fetch_hours)}h, from: now())',
+        range_stop='now()',
+        scale=REGRESSOR_SCALE,
+        interpolate=True
+    )
     
     df_regressors = db.query_dataframe(query_regressors)
     
@@ -282,8 +313,7 @@ def fetch_intraday_data(db, fetch_hours, regressor_fields):
         df_regressors = df_regressors[cols_to_keep]
         df_hist = pd.merge(df_hist, df_regressors, on='ds', how='outer')
     
-    # Fill gaps
-    df_hist = df_hist.set_index('ds').resample('15min').interpolate(method='linear').reset_index()
+    # Merge and sort (interpolation already done in InfluxDB)
     df_hist = df_hist.sort_values('ds').reset_index(drop=True)
     
     return df_hist
@@ -300,16 +330,16 @@ def fetch_future_regressors(db, forecast_days):
     Returns:
         pd.DataFrame: Future dataframe with 'ds' and regressor columns
     """
-    regressor_filter = " or ".join([f'r["_field"] == "{f}"' for f in REGRESSOR_FIELDS])
-    
-    query_future = f'''
-    from(bucket: "{BUCKETS['regressor_future']}")
-      |> range(start: -1h, stop: {forecast_days}d)
-      |> filter(fn: (r) => r["_measurement"] == "{MEASUREMENTS['regressor_future']}")
-      |> filter(fn: (r) => {regressor_filter})
-      |> map(fn: (r) => ({{ r with _value: r._value * {REGRESSOR_SCALE} }}))
-      |> pivot(rowKey:["_time"], columnKey: ["_field"], valueColumn: "_value")
-    '''
+    # Query with interpolation to ensure no gaps
+    query_future = _build_flux_query(
+        bucket=BUCKETS['regressor_future'],
+        measurement=MEASUREMENTS['regressor_future'],
+        fields=REGRESSOR_FIELDS,
+        range_start='-1h',
+        range_stop=f'{forecast_days}d',
+        scale=REGRESSOR_SCALE,
+        interpolate=True
+    )
     
     df_future = db.query_dataframe(query_future)
     
@@ -320,8 +350,7 @@ def fetch_future_regressors(db, forecast_days):
     cols_to_keep = ['ds'] + [c for c in df_future.columns if c in REGRESSOR_FIELDS]
     df_future = df_future[cols_to_keep]
     
-    # Interpolate to ensure no gaps
-    df_future = df_future.set_index('ds').resample('15min').interpolate(method='linear').reset_index()
+    # Sort (interpolation already done in InfluxDB)
     df_future = df_future.sort_values('ds').reset_index(drop=True)
     
     return df_future

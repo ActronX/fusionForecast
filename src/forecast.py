@@ -113,6 +113,9 @@ def run_forecast():
     if n_lags > 0:
         print(f"Autoregression enabled (n_lags={n_lags}). Fetching intraday history...")
         
+    if n_lags > 0:
+        print(f"Autoregression enabled (n_lags={n_lags}). Fetching intraday history...")
+        
         # Calculate how much history we need to fill the lag window
         # We fetch 2x the minimum requirement to be safe against gaps
         hours_needed = (n_lags * 15) / 60
@@ -139,6 +142,15 @@ def run_forecast():
     current_history = df_history_final.tail(n_lags).copy()
     future_points = df_future_final.copy()
     predictions = []
+    
+    # Filter future to start after history ends (avoid overlap)
+    if not current_history.empty:
+        last_history_ds = current_history['ds'].max()
+        original_len = len(future_points)
+        future_points = future_points[future_points['ds'] > last_history_ds].copy()
+        filtered_count = original_len - len(future_points)
+        if filtered_count > 0:
+            print(f"  > Filtered {filtered_count} overlapping timestamps from future data")
     
     # Iterate through the future dataframe in chunks of size 'n_forecasts'
     for i in range(0, len(future_points), n_forecasts):
@@ -171,6 +183,7 @@ def run_forecast():
 
         # Prepare Input: Concatenate (Last known History) + (Future Chunk)
         step_input = pd.concat([current_history.tail(n_lags), chunk], ignore_index=True)
+        step_input = step_input.drop_duplicates(subset='ds', keep='last')  # Remove duplicate timestamps
         step_input['y'] = pd.to_numeric(step_input['y'], errors='coerce')
 
         try:
