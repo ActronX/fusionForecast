@@ -72,26 +72,23 @@ night_threshold = 50     # Ignore values <= this (Watts)
 
 [model.neuralprophet]
 # NeuralProphet specific forecasting settings
-yearly_seasonality = false        # Enable annual cycles
-weekly_seasonality = false        # Weekly patterns
-daily_seasonality = true          # Daily patterns
-seasonality_mode = "additive"    # Saisonal effect type
-growth = "off"                    # Disable trend
+yearly_seasonality = false        # PV is consistent daily, yearly matters but can be simple
+weekly_seasonality = false        # Weekly patterns less relevant for PV?
+daily_seasonality = true          # Strong daily cycle for PV
+seasonality_mode = "additive"     # Additive is often simpler/stable
+growth = "off"                    # Disable trend for PV (often stationary enough or handled by seasonality)
 
-# learning_rate = null             # Enable NeuralProphet auto learning rate
+learning_rate = 0.01             # Explicit LR based on tuning (Auto was unreliable)
 # epochs = null                    # Enable NeuralProphet auto epochs
-batch_size = 256                  # Batch size for training
-# Regularization (0.0 = no regularization)
+batch_size = 256                  # Batch size for training (reduced to allow proper Auto-LR finding)
+# Regularization parameters
 seasonality_reg = 0.0
-ar_reg = 0.0                      # AutoRegressive regularization
+ar_reg = 0.05                      # AutoRegressive regularization
 regressor_mode = "additive"       # Regressor mode: "additive" or "multiplicative"
 accelerator = "auto" # "cpu", "gpu", or "auto"
+loss_func = "Huber"  # "Huber", "MAE", or "MSE"
 
 # Network Architecture (Deep Learning Configuration)
-n_lags = 8                 # 3 hours context (8 * 15min) for intraday correction
-n_forecasts = 96         # Predict 24 hours at once (96 * 15min)
-ar_layers = [32, 16]     # Deep AR-Net: Two hidden layers [32, 16]
-
-# Lagged Regressors
-[model.neuralprophet.lagged_regressors]
-Production_W = 8  # Last 2 hours of actual production (8 * 15min)
+n_lags = 96                # 24 hours context (96 * 15min)
+n_forecasts = 96           # Predict 24 hours at once (96 * 15min)
+ar_layers = []             # Linear AR (no hidden layers) - Sufficient for this data!
