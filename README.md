@@ -9,7 +9,7 @@ FusionForecast is an ML-based tool for forecasting time series data (e.g., PV ge
 - **Data Source**: Reads training data (target value and regressor) from InfluxDB.
 - **Modeling**: Uses NeuralProphet (PyTorch) for time series forecasting.
 - **Intraday Correction**: Dual-mechanism approach for real-time forecast adjustments:
-  - **AR-Net** (`n_lags=12`): Learns autoregressive patterns from the last 3 hours of production to capture short-term trends.
+  - **AR-Net** (`n_lags=96`): Learns autoregressive patterns from the last 24 hours of production to capture short-term trends.
   - **Intraday Correction**: The AR mechanism automatically uses recent live production data to adjust the forecast start point.
 - **Server-Side Aggregation**: Performs downsampling (e.g., to 1h means) directly in the database.
 - **Configurable**: All settings (buckets, measurements, offsets) are defined in `settings.toml`.
@@ -224,9 +224,9 @@ The container automatically:
 Here is a detailed description of the Python scripts located in `src/`:
 
 ### Core Pipeline
-- **`src/train.py`**: Trains the **Production** (PV) model. Fetches historical production and regressor data, configures the model with **AR-Net** (`n_lags=12`, 3h context) and **Deep AR-Net** layers, trains NeuralProphet, and saves `prophet_model.pkl`.
+- **`src/train.py`**: Trains the **Production** (PV) model. Fetches historical production and regressor data, configures the model with **Linear AR** (`n_lags=96`, 24h context), trains NeuralProphet, and saves `prophet_model.pkl`.
 - **`src/forecast.py`**: Generates **Production** forecasts using multi-step prediction with **AR correction**. Uses:
-  - **AR-Net**: Autoregressive network initializes with the last 3h of live production.
+  - **AR-Net**: Autoregressive network initializes with the last 24h of live production.
   - **Recursive Forecasting**: Predicts 24 hours in chunks, feeding predictions back as history for subsequent steps.
   - Loads the model, fetches future weather data and recent production (via `data_loader.py`), predicts generation, and writes to InfluxDB.
 
@@ -237,7 +237,7 @@ Here is a detailed description of the Python scripts located in `src/`:
 
 ### Utilities & Maintenance
 
-- **`src/tune.py`**: Performs **Hyperparameter Tuning** using **Optuna** to find the optimal NeuralProphet parameters (e.g., `learning_rate`, `epochs`) for your specific data.
+- **`src/tune.py`**: Performs **Hyperparameter Tuning** using **Grid Search** to find the optimal NeuralProphet parameters (e.g., `ar_layers`, `ar_reg`, `seasonality_mode`) for your specific data.
 
 - **`src/plot_model.py`**: Generates interactive Plotly charts of the model components (trend, seasonality) for visual inspection.
 
@@ -253,7 +253,7 @@ This section describes which data is read from and written to InfluxDB, and why 
     - **Production History** (`buckets.history_produced`): Actual historical PV generation data.
     - **Regressor History** (`buckets.regressor_history`): Historical weather data (e.g., solar irradiance) corresponding to the production history.
 - **Why**: The NeuralProphet model needs to learn the relationship between the target variable (Production) and time/weather. The model uses:
-  - **AutoRegressive (AR-Net)** with `n_lags=12`: Learns from the last 3 hours of target values to capture short-term patterns and initialize predictions.
+  - **AutoRegressive (AR-Net)** with `n_lags=96`: Learns from the last 24 hours of target values to capture short-term patterns and initialize predictions.
 
 ### 2. Forecasting (Prediction)
 *Scripts: `src/forecast.py`*

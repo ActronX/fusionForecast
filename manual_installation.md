@@ -85,15 +85,12 @@ Specific settings for the NeuralProphet model (PyTorch-based deep learning frame
 - `growth`: Trend component - `"linear"`, `"off"`, or `"discontinuous"` (default: `"off"` for stationary PV data).
 
 **Training Parameters:**
-- `learning_rate`: Step size for gradient descent optimizer (default: `0.001`).
-- `epochs`: Number of training iterations through the dataset (default: `40`).
-- `batch_size`: Number of samples per training batch (default: `128`).
+- `learning_rate`: Step size for gradient descent optimizer (default: `0.01`, validated via tuning).
+- `batch_size`: Number of samples per training batch (default: `256`).
 
 **Regularization (Overfitting Prevention):**
-- `trend_reg`: L2 penalty for trend component (default: `0.01`).
-- `seasonality_reg`: L2 penalty for seasonality (default: `0.01`).
-- `ar_reg`: L2 penalty for AutoRegressive lags (default: `0.0`).
-- `future_regressor_regularization`: L2 penalty for weather regressors (default: `0.01`).
+- `seasonality_reg`: L2 penalty for seasonality (default: `0.0`).
+- `ar_reg`: L2 penalty for AutoRegressive lags (default: `0.05`, validated via tuning).
 - `regressor_mode`: How regressors combine with base forecast - `"additive"` or `"multiplicative"` (default: `"additive"`).
 
 **Hardware Acceleration:**
@@ -101,24 +98,72 @@ Specific settings for the NeuralProphet model (PyTorch-based deep learning frame
 
 **AutoRegressive (AR) Configuration:**
 These parameters enable multi-step forecasting with historical context:
-- `n_lags`: Number of historical time steps to use as AR input (default: `12` = 3 hours at 15-min intervals).
+- `n_lags`: Number of historical time steps to use as AR input (default: `96` = 24 hours at 15-min intervals).
   - **How it works**: The AR-Net looks back at the last `n_lags` actual production values to inform predictions.
-  - **Example**: With `n_lags=12`, the model uses the past 3 hours of production history for intraday patterns.
+  - **Example**: With `n_lags=96`, the model uses the past 24 hours of production history for intraday patterns.
 - `n_forecasts`: Number of future steps to predict simultaneously (default: `96` = 24 hours).
   - **Multi-step prediction**: Instead of predicting one step at a time, the model generates all 96 future values in one forward pass.
-- `ar_layers`: Hidden layer configuration for AR network (default: `[32, 16]` = two hidden layers for deep AR-Net).
-  - **Non-empty list** enables deeper learning of complex autoregressive relationships.
-- **Lagged Regressors**: Additional configuration under `[model.neuralprophet.lagged_regressors]` allows using other variables (like actual production) as lagged inputs alongside AR-Net.
+- `ar_layers`: Hidden layer configuration for AR network (default: `[]` = Linear AR model).
+  - **Empty list** uses a simple linear model, which is efficient and validated as equally accurate.
 
+---
 
+### How Autoregression (AR-Net) Works
 
-#### 9. Hyperparameter Tuning `[model.tuning]`
-- `trials`: Number of optimization trials (default: 100).
-- `process_count`: Parallel CPU cores for Optuna optimization.
-- `night_threshold`: Power level (Watts) below which data is ignored during evaluation to prevent "easy night wins" from skewing metrics.
+Autoregression is a technique where the model uses **its own past values** to predict future values. In the context of PV forecasting, this means:
 
-#### 9. Lagged Regressors `[model.neuralprophet.lagged_regressors]`
-Lagged regressors are currently unused in favor of the built-in **AR-Net** (`n_lags`), which handles intraday corrections more effectively for this use case.
+> The best predictor of what power you'll produce in the next hour is often what you produced in the last few hours.
+
+**The Core Idea:**
+```
+Future Production = f(Past Production, Weather Forecast, Time Patterns)
+                    ↑
+              This is the AR component
+```
+
+**Step-by-Step Prediction Flow:**
+
+1. **Initialization**: The model receives the last 24 hours (`n_lags=96`) of actual production data.
+2. **First Prediction**: Using this history + weather forecast + learned daily patterns, it predicts the next 24 hours (`n_forecasts=96`).
+3. **Recursive Continuation**: For predictions beyond 24h, the model feeds its own predictions back as "history" and continues.
+
+**Visual Example (15-min intervals):**
+```
+Time:     ... 08:00  08:15  08:30  08:45  09:00  09:15 ...
+                ↓      ↓      ↓      ↓
+Reality:       500W   520W   550W   580W    ?      ?
+                └──────────────────────────┘
+                        n_lags=96 (history)
+                                            ↓
+Prediction:                                610W   630W ...
+                                            └────────────┘
+                                            n_forecasts=96
+```
+
+**Why Linear AR (`ar_layers=[]`) Works Well:**
+
+For PV systems, the relationship between past and future production is often **linear**:
+- If you produced 500W at 09:00 yesterday and the weather is similar, you'll likely produce ~500W today.
+- No complex neural network layers are needed to learn this simple pattern.
+
+A "Deep AR" network (`ar_layers=[64, 32]`) could theoretically learn more complex relationships, but our tuning showed **no improvement** over the simpler linear model. This means:
+- ✅ Faster training
+- ✅ Smaller model file
+- ✅ Less risk of overfitting
+- ✅ Same accuracy
+
+**Additive vs. Multiplicative Seasonality:**
+
+The model combines AR predictions with seasonal patterns. We tested both modes:
+- **Additive** (`seasonality_mode="additive"`): `Forecast = AR + Season + Regressor`
+- **Multiplicative**: `Forecast = AR × Season × Regressor`
+
+Additive was validated as **significantly better** (Loss 0.012 vs 0.022) because PV production includes many zero values (nighttime), which multiplicative models handle poorly.
+
+---
+
+#### 9. Hyperparameter Tuning
+Tuning is now performed using `src/tune.py` with **Grid Search** to find optimal NeuralProphet parameters (e.g., `ar_layers`, `ar_reg`, `seasonality_mode`).
 
 
 #### 10. Hyperparameter Tuning `[model.tuning]`
@@ -168,7 +213,7 @@ The forecast script loads the saved model and future regressor data (e.g., weath
 ### 6. Intraday Monitoring (Optional)
 
 The forecast script automatically performs intraday corrections using the **AR-Net** mechanism:
-- **AR-Net** (`n_lags=12`): Uses last 3 hours of target values for autoregressive predictions.
+- **AR-Net** (`n_lags=96`): Uses last 24 hours of target values for autoregressive predictions.
 
 No separate nowcast script needed - corrections happen automatically because the forecast loop is initialized with recent production data.
 
@@ -187,7 +232,7 @@ Executes the complete workflow in order:
 
 ### 8. Hyperparameter Tuning
 
-To optimize the model's accuracy, you can tune the hyperparameters (e.g., `changepoint_prior_scale`, `seasonality_mode`) using **Optuna** (Bayesian Optimization). The settings (trials, cpu cores) are defined in `settings.toml` under `[model.tuning]`.
+To optimize the model's accuracy, you can tune the hyperparameters (e.g., `ar_layers`, `ar_reg`, `seasonality_mode`) using **Grid Search**. Run `src/tune.py` and review `tuning_results.csv` for the best configuration.
 
 **Start:**
 - Windows: `tune.bat` or `python -m src.tune`
@@ -223,8 +268,8 @@ The tuning script evaluates model performance using Cross-Validation and calcula
 Here is a detailed description of the Python scripts located in `src/`:
 
 ### Core Pipeline
-- **`src/train.py`**: Trains the **Production** (PV) model. Fetches historical production and regressor data, configures AR-Net (`n_lags=8`) and lagged regressors (`Production_W`), trains NeuralProphet, and saves `prophet_model.pkl`.
-- **`src/forecast.py`**: Generates **Production** forecasts using multi-step prediction with **intraday correction**. Uses AR-Net for autoregressive patterns and lagged regressors for real-time corrections based on actual production. Predicts generation in 24-hour chunks and writes to InfluxDB.
+- **`src/train.py`**: Trains the **Production** (PV) model. Fetches historical production and regressor data, configures Linear AR (`n_lags=96`, 24h context), trains NeuralProphet, and saves `prophet_model.pkl`.
+- **`src/forecast.py`**: Generates **Production** forecasts using multi-step prediction with **intraday correction**. Uses AR-Net for autoregressive patterns based on recent actual production. Predicts generation in 24-hour chunks and writes to InfluxDB.
 
 ### Data Fetching & Calculations
 - **`src/fetch_future_weather.py`**: Fetches **current** weather forecasts from Open-Meteo. Uses `weather_utils.py` to calculate effective irradiance (GTI) and clearsky GHI.
@@ -233,7 +278,7 @@ Here is a detailed description of the Python scripts located in `src/`:
 
 ### Utilities & Maintenance
 
-- **`src/tune.py`**: Performs **Hyperparameter Tuning** using **Optuna** to find the optimal NeuralProphet parameters (e.g., `learning_rate`, `epochs`) for your specific data.
+- **`src/tune.py`**: Performs **Hyperparameter Tuning** using **Grid Search** to find the optimal NeuralProphet parameters (e.g., `ar_layers`, `ar_reg`, `seasonality_mode`) for your specific data.
 
 - **`src/plot_model.py`**: Generates interactive Plotly charts of the model components (trend, seasonality) for visual inspection.
 
@@ -249,8 +294,7 @@ This section describes which data is read from and written to InfluxDB, and why 
     - **Production History** (`buckets.history_produced`): Actual historical PV generation data.
     - **Regressor History** (`buckets.regressor_history`): Historical weather data (e.g., solar irradiance) corresponding to the production history.
 - **Why**: The NeuralProphet model needs to learn the relationship between the target variable (Production) and time/weather. The model uses:
-  - **AR-Net** (`n_lags=8`): Uses last 2 hours of target values to capture short-term autoregressive patterns.
-  - **Lagged Regressor** (`Production_W`): Uses last 2 hours of actual production to enable real-time intraday corrections.
+  - **Linear AR-Net** (`n_lags=96`): Uses last 24 hours of target values to capture short-term autoregressive patterns.
 
 ### 2. Forecasting (Prediction)
 *Scripts: `src/forecast.py`*
