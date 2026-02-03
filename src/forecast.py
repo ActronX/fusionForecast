@@ -66,12 +66,8 @@ def run_forecast():
         return
         
     print(f"Loading model from: {model_path}")
-    # weights_only=False required for full model unpickling (PyTorch > 2.6 safety check)
-    model = torch.load(model_path, weights_only=False)
-    
-    # Restore trainer state if applicable (needed for some NP versions)
-    if hasattr(model, 'restore_trainer'):
-        model.restore_trainer()
+    # Use NeuralProphet's native load function (safer than torch.load)
+    model = neuralprophet.load(model_path)
 
     # Extract model configuration
     n_lags = getattr(model, 'n_lags', 0)
@@ -109,10 +105,7 @@ def run_forecast():
     # historical values of 'y' (production) to predict the first step.
     
     df_history_final = pd.DataFrame() # Default empty
-    
-    if n_lags > 0:
-        print(f"Autoregression enabled (n_lags={n_lags}). Fetching intraday history...")
-        
+            
     if n_lags > 0:
         print(f"Autoregression enabled (n_lags={n_lags}). Fetching intraday history...")
         
@@ -142,6 +135,15 @@ def run_forecast():
     current_history = df_history_final.tail(n_lags).copy()
     future_points = df_future_final.copy()
     predictions = []
+    
+    # AR cutoff configuration: after ar_days, don't use AR history
+    # -1 = always use AR, 0 = never use AR, N = use AR for first N days
+    ar_days = settings['model']['neuralprophet'].get('ar_days', -1)
+    forecast_start = df_future_final['ds'].min()
+    ar_cutoff = forecast_start + pd.Timedelta(days=ar_days) if ar_days >= 0 else None
+    
+    if ar_cutoff:
+        print(f"AR will be used until: {ar_cutoff.strftime('%Y-%m-%d %H:%M')} (ar_days={ar_days})")
     
     # Filter future to start after history ends (avoid overlap)
     if not current_history.empty:
@@ -182,7 +184,17 @@ def run_forecast():
             chunk = pd.concat([chunk, padding], ignore_index=True)
 
         # Prepare Input: Concatenate (Last known History) + (Future Chunk)
-        step_input = pd.concat([current_history.tail(n_lags), chunk], ignore_index=True)
+        # Check if we're past the AR cutoff date
+        chunk_start = chunk['ds'].min()
+        use_ar_history = ar_cutoff is None or chunk_start < ar_cutoff
+        
+        if use_ar_history and n_lags > 0:
+            # Use AR: include historical context
+            step_input = pd.concat([current_history.tail(n_lags), chunk], ignore_index=True)
+        else:
+            # No AR: only use regressors, fill y with zeros
+            step_input = chunk.copy()
+            step_input['y'] = 0.0  # Model needs y column but won't use AR
         step_input = step_input.drop_duplicates(subset='ds', keep='last')  # Remove duplicate timestamps
         step_input['y'] = pd.to_numeric(step_input['y'], errors='coerce')
 

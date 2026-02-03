@@ -57,25 +57,39 @@ def train_model():
     print("Configuring NeuralProphet model...")
     p_settings = settings['model']['neuralprophet']
     
+    # Determine AR-Net architecture
+    ar_layers = p_settings.get('ar_layers', [])
+    
+    # Learning rate: use lower value (0.003) when using hidden layers in AR-Net
+    # Per NeuralProphet docs: "For a high enough learning rate (probably > 0.1), 
+    # the gradient vanishes and forces the AR net output to 0"
+    if ar_layers:
+        default_lr = 0.003  # Lower LR for deep AR-Net
+    else:
+        default_lr = None   # Auto for linear AR
+    learning_rate = p_settings.get('learning_rate', default_lr)
+    
     # Initialize NeuralProphet model with configured parameters
     model = NeuralProphet(
-        growth=p_settings.get('growth', 'linear'),
+        # Growth: 'off' is recommended for pure AR-based PV forecasting (per Solar PV docs)
+        growth=p_settings.get('growth', 'off'),
         yearly_seasonality=p_settings.get('yearly_seasonality', False),
         weekly_seasonality=p_settings.get('weekly_seasonality', False), 
         daily_seasonality=p_settings.get('daily_seasonality', True),
         seasonality_mode=p_settings.get('seasonality_mode', 'additive'),
-        learning_rate=p_settings.get('learning_rate'), # Defaults to None (auto) if null in settings
+        learning_rate=learning_rate,
         epochs=p_settings.get('epochs'),               # Defaults to None (auto) if null in settings
         batch_size=p_settings.get('batch_size', 128),
+        # Loss function: Huber is robust to outliers
+        loss_func=p_settings.get('loss_func', 'Huber'),
         # Regularization parameters
-        trend_reg=0, # Hardcoded to 0 as in tune.py (growth='off')
+        trend_reg=0, # Hardcoded to 0 (growth='off')
         seasonality_reg=p_settings.get('seasonality_reg', 0.0),
         ar_reg=p_settings.get('ar_reg', 0.0),
         # AutoRegressive architecture
         n_lags=p_settings.get('n_lags', 96),
         n_forecasts=p_settings.get('n_forecasts', 96),
-        # d_hidden/num_hidden_layers removed for v0.9.0 compatibility
-        ar_layers=p_settings.get('ar_layers', [64, 32]),
+        ar_layers=ar_layers,
         accelerator=p_settings.get('accelerator', 'auto'),
         drop_missing=True
     )

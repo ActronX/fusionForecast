@@ -1,15 +1,34 @@
+"""
+Model Visualization Script for FusionForecast
+
+Generates comprehensive plots for NeuralProphet model analysis:
+- Forecast Overview
+- Component Decomposition
+- Regressor Impact
+- AR Parameters (per forecast step)
+- Residuals Analysis
+- Autocorrelation (optional)
+
+Based on NeuralProphet documentation:
+- https://neuralprophet.com/how-to-guides/feature-guides/plotly.html
+- https://neuralprophet.com/tutorials/tutorial04.html
+"""
 
 import os
-import torch 
 import pandas as pd
+import numpy as np
+import neuralprophet
 from src.config import settings
 from src.db import InfluxDBWrapper
 import plotly.graph_objs as go
+from plotly.subplots import make_subplots
 import webbrowser
 import time
 
 def plot_model():
-    print("Starting robust plotting pipeline... (NeuralProphet)")
+    print("=" * 70)
+    print("NeuralProphet Model Visualization")
+    print("=" * 70)
     
     # 1. Load Model
     model_path = settings['model']['path']
@@ -17,27 +36,24 @@ def plot_model():
         print(f"Error: Model file not found at {model_path}")
         return
 
-    print(f"Loading model from {model_path}...")
-    model = torch.load(model_path, weights_only=False)
-    if hasattr(model, 'restore_trainer'):
-        model.restore_trainer()
+    print(f"\n[1/5] Loading model from {model_path}...")
+    # Use NeuralProphet's native load function (safer than torch.load)
+    model = neuralprophet.load(model_path)
+    
+    # Set plotting backend once
+    model.set_plotting_backend("plotly")
+    
+    # Extract model configuration
+    n_lags = getattr(model, 'n_lags', 0)
+    n_forecasts = getattr(model, 'n_forecasts', 1)
+    print(f"  Model: n_lags={n_lags}, n_forecasts={n_forecasts}")
 
     # 2. Configuration & Data Fetching
     db = InfluxDBWrapper()
     
-    training_days = settings['model']['training_days'] 
-    
     # User Request: 14 days history, 7 days future
     plot_history_days = 14 
-    forecast_days = 7 # Override setting for plotting view
-    
-    # ... (rest of configuration)
-    
-    # ... (fetching logic uses plot_history_days and forecast_days, so skipping edit there if variable names match)
-    
-    # Note: I need to ensure the variables `plot_history_days` and `forecast_days` are used in fetching queries.
-    # In my previous write_to_file, I used `forecast_days = settings...`. I will overwrite lines 28-30
-
+    forecast_days = 7
     
     reg_config = settings['influxdb']['fields']['regressor_history']
     regressor_fields = reg_config if isinstance(reg_config, list) else [reg_config]
@@ -45,11 +61,9 @@ def plot_model():
     regressor_scale = settings['model']['preprocessing'].get('regressor_scale', 1.0)
     produced_scale = settings['model']['preprocessing'].get('produced_scale', 1.0)
     
-    print(f"Fetching data (History: {plot_history_days}d, Future: {forecast_days}d)...")
+    print(f"\n[2/5] Fetching data (History: {plot_history_days}d, Future: {forecast_days}d)...")
 
     # A. Fetch History (Target + Regressors)
-    # We fetch enough history for the model to have context (n_lags) + the plot window.
-    # Safe buffer: plot_history_days + 5 days
     range_start = f"-{plot_history_days + 5}d"
     
     # Fetch Target (Produced)
@@ -90,18 +104,14 @@ def plot_model():
     
     if not df_hist_reg.empty:
         df_hist_reg['ds'] = pd.to_datetime(df_hist_reg['_time']).dt.tz_localize(None)
-        # Drop non-numeric and _time
         cols_to_keep = ['ds'] + [c for c in df_hist_reg.columns if c in regressor_fields]
         df_hist_reg = df_hist_reg[cols_to_keep]
-        
-        # Merge into df_hist
-        df_hist = pd.merge(df_hist, df_hist_reg, on='ds', how='outer') # Outer to keep all timestamps
+        df_hist = pd.merge(df_hist, df_hist_reg, on='ds', how='outer')
     
-    # Sort and fill
     df_hist = df_hist.sort_values('ds').reset_index(drop=True)
-    df_hist = df_hist.fillna(0) # Simple fill for plotting gaps
+    df_hist = df_hist.fillna(0)
     
-    # Fetch lagged regressor data (Production_W) if configured
+    # Fetch lagged regressor data if configured
     lagged_reg_config = settings['model']['neuralprophet'].get('lagged_regressors', {})
     if 'Production_W' in lagged_reg_config:
         print("  - Fetching Production_W for lagged regressor...")
@@ -120,12 +130,9 @@ def plot_model():
             if live_field in df_production.columns:
                 df_production.rename(columns={live_field: 'Production_W'}, inplace=True)
                 df_hist = pd.merge(df_hist, df_production[['ds', 'Production_W']], on='ds', how='left')
-                df_hist['Production_W'] = df_hist['Production_W'].fillna(df_hist['y'])  # Use 'y' as fallback
-                print(f"    Added Production_W column (lagged regressor)")
+                df_hist['Production_W'] = df_hist['Production_W'].fillna(df_hist['y'])
         else:
-            # If no live data, use 'y' as Production_W
             df_hist['Production_W'] = df_hist['y']
-            print("    No live data found, using 'y' as Production_W")
 
     # B. Fetch Future Regressors
     print("  - Fetching Future Regressors...")
@@ -146,85 +153,78 @@ def plot_model():
     df_fcst_reg['ds'] = pd.to_datetime(df_fcst_reg['_time']).dt.tz_localize(None)
     cols_to_keep_fut = ['ds'] + [c for c in df_fcst_reg.columns if c in regressor_fields]
     df_future_regressors = df_fcst_reg[cols_to_keep_fut].sort_values('ds')
-    
-    # Interpolate Future Regressors to ensure no gaps for make_future_dataframe
     df_future_regressors = df_future_regressors.set_index('ds').resample('15min').interpolate(method='linear').reset_index()
     
-    
     # 3. Construct Prediction Dataframe
-    print("Constructing prediction dataframe...")
+    print("\n[3/5] Constructing prediction dataframe...")
     
-    # clean df_hist to have 15 min freq
     df_hist = df_hist.set_index('ds').resample('15min').mean().interpolate().reset_index()
     
-    # Create the future dataframe using NeuralProphet's method
-    # This automatically handles extending ‘ds’ and appending regressors if provided correctly
-    # But for 'regressors_df', NP expects a dataframe with 'ds' and regressor columns covering the FUTURE period.
-    
-    # Ensure df_future_regressors covers the period after df_hist
     last_hist_date = df_hist['ds'].max()
     df_future_regressors = df_future_regressors[df_future_regressors['ds'] > last_hist_date]
     
-    # We allow 'periods' to be controlled by the available future regressor data
-    # (or strictly forecast_days * 96)
     periods = len(df_future_regressors)
-    print(f"Predicting {periods} steps into future...")
+    print(f"  Predicting {periods} steps into future...")
     
     try:
         future = model.make_future_dataframe(
             df=df_hist, 
             regressors_df=df_future_regressors,
             periods=periods,
-            n_historic_predictions=True # We want to plot history too
+            n_historic_predictions=True
         )
         
-        print(f"Prediction dataframe ready. Shape: {future.shape}")
+        print(f"  Prediction dataframe ready. Shape: {future.shape}")
         
         # 4. Predict
-        # Try with decomposition first to get full components
+        print("\n[4/5] Generating predictions...")
         try:
-            print("Predicting with decomposition...")
             forecast = model.predict(future, decompose=True)
-            print("Prediction with decomposition successful.")
+            print("  Prediction with decomposition successful.")
         except Exception as e_decomp:
-            print(f"Prediction with decomposition failed ({e_decomp}). Retrying without decomposition...")
+            print(f"  Decomposition failed ({e_decomp}). Retrying without...")
             forecast = model.predict(future, decompose=False)
         
-        # Do NOT rename yhat1 to yhat, as model.plot expects yhat1
-        # if 'yhat1' in forecast.columns:
-        #    forecast.rename(columns={'yhat1': 'yhat'}, inplace=True)
-            
-        print("Forecast generated successfully.")
-        
         # 5. Plotting
-        print("Generating plots...")
+        print("\n[5/5] Generating plots...")
         
-        # Plot 1: Overview
-        fig1 = model.plot(forecast, plotting_backend="plotly")
+        output_files = []
         
-        # Rename traces for clarity (yhat1 -> Forecast, y -> Actual)
+        # ─────────────────────────────────────────────────────────────────
+        # Plot 1: Forecast Overview
+        # ─────────────────────────────────────────────────────────────────
+        print("  - Plot 1: Forecast Overview...")
+        fig1 = model.plot(forecast)
+        
+        # Rename traces for clarity
         for trace in fig1.data:
             if trace.name == 'yhat1':
                 trace.name = 'Forecast'
             if trace.name == 'y':
                 trace.name = 'Actual'
                 
-        fig1.update_layout(title="Forecast Overview (Last 14 Days + Future)")
+        fig1.update_layout(title="Forecast Overview (History + Future)")
         fig1_path = os.path.abspath("plot_overview.html")
         fig1.write_html(fig1_path)
+        output_files.append(fig1_path)
         
-        # Plot 2: Components (Standard)
-        fig2 = model.plot_components(forecast, plotting_backend="plotly")
+        # ─────────────────────────────────────────────────────────────────
+        # Plot 2: Components
+        # ─────────────────────────────────────────────────────────────────
+        print("  - Plot 2: Components...")
+        fig2 = model.plot_components(forecast)
         fig2_path = os.path.abspath("plot_components.html")
         fig2.write_html(fig2_path)
+        output_files.append(fig2_path)
         
-        # Plot 3: Custom Regressor Impact Analysis
-        # Extract columns starting with 'future_regressor_'
+        # ─────────────────────────────────────────────────────────────────
+        # Plot 3: Regressor Impact
+        # ─────────────────────────────────────────────────────────────────
         reg_cols = [c for c in forecast.columns if c.startswith('future_regressor_')]
         if reg_cols:
+            print("  - Plot 3: Regressor Impact...")
             fig3 = go.Figure()
             for col in reg_cols:
-                # Clean name: future_regressor_temperature_2m -> Temperature 2m
                 clean_name = col.replace('future_regressor_', '').replace('_', ' ').title()
                 fig3.add_trace(go.Scatter(
                     x=forecast['ds'],
@@ -234,38 +234,150 @@ def plot_model():
                 ))
             fig3.update_layout(
                 title="Regressor Influence (Impact on Production)",
-                yaxis_title="Contribution (kW)", # Assuming kW
+                yaxis_title="Contribution (W)",
                 template="plotly_white"
             )
             fig3_path = os.path.abspath("plot_regressor_impact.html")
             fig3.write_html(fig3_path)
-        else:
-            fig3_path = None
-            
-        # Plot 4: Parameters (Weights)
-        fig4 = model.plot_parameters(plotting_backend="plotly")
+            output_files.append(fig3_path)
+        
+        # ─────────────────────────────────────────────────────────────────
+        # Plot 4: Parameters (AR Weights)
+        # ─────────────────────────────────────────────────────────────────
+        print("  - Plot 4: Model Parameters...")
+        fig4 = model.plot_parameters()
         fig4_path = os.path.abspath("plot_parameters.html")
         fig4.write_html(fig4_path)
+        output_files.append(fig4_path)
         
-        print("Done. Files saved in project root:")
-        print(f" - {fig1_path}")
-        print(f" - {fig2_path}")
-        if fig3_path: print(f" - {fig3_path}")
-        print(f" - {fig4_path}")
+        # ─────────────────────────────────────────────────────────────────
+        # Plot 5: AR Weights per Forecast Step (if n_forecasts > 1)
+        # ─────────────────────────────────────────────────────────────────
+        if n_forecasts > 1 and n_lags > 0:
+            print("  - Plot 5: AR Weights per Forecast Step...")
+            
+            # Show AR weights for different forecast horizons
+            steps_to_show = [1, n_forecasts // 4, n_forecasts // 2, n_forecasts]
+            steps_to_show = [s for s in steps_to_show if 1 <= s <= n_forecasts]
+            
+            fig5 = make_subplots(
+                rows=len(steps_to_show), cols=1,
+                subplot_titles=[f"AR Weights for Step {s} ({s*15}min ahead)" for s in steps_to_show],
+                vertical_spacing=0.08
+            )
+            
+            for idx, step in enumerate(steps_to_show):
+                model_highlighted = model.highlight_nth_step_ahead_of_each_forecast(step)
+                try:
+                    ar_fig = model_highlighted.plot_parameters(components=["autoregression"])
+                    # Extract trace data
+                    for trace in ar_fig.data:
+                        trace_copy = go.Scatter(
+                            x=trace.x,
+                            y=trace.y,
+                            name=f"Step {step}",
+                            showlegend=(idx == 0)
+                        )
+                        fig5.add_trace(trace_copy, row=idx+1, col=1)
+                except Exception:
+                    pass  # Skip if no AR component
+            
+            fig5.update_layout(
+                title="Autoregression Weights by Forecast Horizon",
+                height=250 * len(steps_to_show),
+                template="plotly_white"
+            )
+            fig5_path = os.path.abspath("plot_ar_steps.html")
+            fig5.write_html(fig5_path)
+            output_files.append(fig5_path)
+        
+        # ─────────────────────────────────────────────────────────────────
+        # Plot 6: Residuals Analysis
+        # ─────────────────────────────────────────────────────────────────
+        if 'y' in forecast.columns and 'yhat1' in forecast.columns:
+            print("  - Plot 6: Residuals Analysis...")
+            
+            # Calculate residuals
+            df_res = forecast[['ds', 'y', 'yhat1']].dropna()
+            df_res['residuals'] = df_res['y'] - df_res['yhat1']
+            
+            # Create subplot with residuals over time and histogram
+            fig6 = make_subplots(
+                rows=2, cols=1,
+                subplot_titles=["Residuals Over Time (Actual - Predicted)", "Residual Distribution"],
+                vertical_spacing=0.15,
+                row_heights=[0.6, 0.4]
+            )
+            
+            # Residuals over time
+            fig6.add_trace(
+                go.Scatter(
+                    x=df_res['ds'],
+                    y=df_res['residuals'],
+                    mode='lines',
+                    name='Residuals',
+                    line=dict(color='steelblue')
+                ),
+                row=1, col=1
+            )
+            
+            # Zero line
+            fig6.add_hline(y=0, line_dash="dash", line_color="red", row=1, col=1)
+            
+            # Histogram
+            fig6.add_trace(
+                go.Histogram(
+                    x=df_res['residuals'],
+                    name='Distribution',
+                    marker_color='steelblue',
+                    nbinsx=50
+                ),
+                row=2, col=1
+            )
+            
+            # Statistics annotation
+            mean_res = df_res['residuals'].mean()
+            std_res = df_res['residuals'].std()
+            rmse = np.sqrt((df_res['residuals'] ** 2).mean())
+            
+            fig6.update_layout(
+                title=f"Residuals Analysis (RMSE: {rmse:.2f}, Mean: {mean_res:.2f}, Std: {std_res:.2f})",
+                template="plotly_white",
+                height=600
+            )
+            
+            fig6_path = os.path.abspath("plot_residuals.html")
+            fig6.write_html(fig6_path)
+            output_files.append(fig6_path)
+        
+        # ─────────────────────────────────────────────────────────────────
+        # Plot 7: Forecast Focus (specific step)
+        # ─────────────────────────────────────────────────────────────────
+        if n_forecasts > 1:
+            print("  - Plot 7: Forecast Focus (1st step)...")
+            fig7 = model.plot(forecast, forecast_in_focus=1)
+            fig7.update_layout(title="Forecast Focus: 1-Step Ahead (15 min)")
+            fig7_path = os.path.abspath("plot_forecast_focus.html")
+            fig7.write_html(fig7_path)
+            output_files.append(fig7_path)
+        
+        # ─────────────────────────────────────────────────────────────────
+        # Summary
+        # ─────────────────────────────────────────────────────────────────
+        print("\n" + "=" * 70)
+        print("Done. Files saved:")
+        print("=" * 70)
+        for f in output_files:
+            print(f"  - {os.path.basename(f)}")
         
         # Open in browser
-        # Open in browser
-        webbrowser.open(f"file://{fig1_path}")
-        time.sleep(1)
-        webbrowser.open(f"file://{fig2_path}")
-        time.sleep(1)
-        if fig3_path: webbrowser.open(f"file://{fig3_path}")
-        time.sleep(1)
-        webbrowser.open(f"file://{fig4_path}")
-
+        print("\nOpening plots in browser...")
+        for f in output_files:
+            webbrowser.open(f"file://{f}")
+            time.sleep(0.5)
         
     except Exception as e:
-        print(f"Error during prediction/plotting: {e}")
+        print(f"\nError during prediction/plotting: {e}")
         import traceback
         traceback.print_exc()
 

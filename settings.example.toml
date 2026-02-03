@@ -91,4 +91,5 @@ loss_func = "Huber"  # "Huber", "MAE", or "MSE"
 # Network Architecture (Deep Learning Configuration)
 n_lags = 96                # 24 hours context (96 * 15min)
 n_forecasts = 96           # Predict 24 hours at once (96 * 15min)
+ar_days = -1                # Days to use AR for (1 = only first day, 0 = disable AR, -1 = always)
 ar_layers = []             # Linear AR (no hidden layers) - Sufficient for this data!
