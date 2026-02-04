@@ -167,6 +167,7 @@ def fetch_training_data(verbose=True):
         range_start=range_start,
         scale=PRODUCED_SCALE,
         offset=PRODUCED_OFFSET,
+        interpolate=True,
         verbose=verbose
     )
     
@@ -204,6 +205,7 @@ def fetch_training_data(verbose=True):
         range_start=range_start,
         scale=REGRESSOR_SCALE,
         offset=REGRESSOR_OFFSET,
+        interpolate=True,
         verbose=verbose
     )
     

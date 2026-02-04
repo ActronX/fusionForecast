@@ -67,12 +67,12 @@ def preprocess_data(df, value_column='_value', is_prophet_input=True):
     else:
         return df
 
-def prepare_prophet_dataframe(df, freq='30min'):
+def prepare_prophet_dataframe(df, freq='15min'):
     """
     Standardizes a dataframe for Prophet use:
     1. Ensures 'ds' column exists (from _time, index, or ds).
     2. Strips timezone from 'ds'.
-    3. Resamples/Truncates to the specified frequency (default 30min).
+    3. Resamples/Truncates to the specified frequency (default 15min).
     4. Returns dataframe with 'ds' as column, ready for merge/training.
     """
     df = df.copy()
