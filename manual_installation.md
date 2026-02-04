@@ -1,5 +1,9 @@
 ## Manual Installation (Alternative)
 
+## Data Flow
+
+![Dataflow Diagram](dataflow_diagram.png)
+
 ### Installation
 
 1. Clone or extract the repository.
