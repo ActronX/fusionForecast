@@ -102,13 +102,20 @@ Specific settings for the NeuralProphet model (PyTorch-based deep learning frame
 
 **AutoRegressive (AR) Configuration:**
 These parameters enable multi-step forecasting with historical context:
-- `n_lags`: Number of historical time steps to use as AR input (default: `96` = 24 hours at 15-min intervals).
-  - **How it works**: The AR-Net looks back at the last `n_lags` actual production values to inform predictions.
-  - **Example**: With `n_lags=96`, the model uses the past 24 hours of production history for intraday patterns.
-- `n_forecasts`: Number of future steps to predict simultaneously (default: `96` = 24 hours).
-  - **Multi-step prediction**: Instead of predicting one step at a time, the model generates all 96 future values in one forward pass.
-- `ar_layers`: Hidden layer configuration for AR network (default: `[]` = Linear AR model).
-  - **Empty list** uses a simple linear model, which is efficient and validated as equally accurate.
+
+| Parameter | Recommended | Description |
+| :--- | :--- | :--- |
+| `n_lags` | `288` | 72 hours of history (288 × 15min). Per docs: should be `>= n_forecasts`. Larger context improves pattern recognition. |
+| `n_forecasts` | `96` | 24 hours ahead (96 × 15min). Generates all future values in one forward pass. |
+| `ar_days` | `-1` | Days to use AR: `1`=first day only, `0`=disable, `-1`=always use AR. |
+| `ar_layers` | `[]` | Linear AR model. Sufficient for PV; deep layers add complexity without accuracy gains. |
+| `ar_reg` | `0.5` | L2 regularization. Prevents overfitting; 0.5 is a balanced default from tuning. |
+
+**Why these values?**
+- **`n_lags=288` (72h context)**: More history helps the model learn patterns across multiple days. The rule `n_lags >= n_forecasts` ensures the AR-Net has enough context to predict a full forecast window.
+- **`ar_days=-1` (always use AR)**: Continuously uses recent production data for intraday correction. If you experience error accumulation on multi-day forecasts, set to `1` to limit AR to the first day only.
+- **`ar_layers=[]` (Linear)**: Our tuning showed linear AR matches deep AR accuracy for PV. Simpler = faster training, smaller model, less overfitting risk.
+- **`ar_reg=0.5`**: Moderate regularization prevents the model from over-relying on past values, balancing AR influence with weather regressors.
 
 ---
 

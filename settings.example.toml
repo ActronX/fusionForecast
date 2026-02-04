@@ -108,7 +108,7 @@ loss_func = "Huber"               # "Huber" (robust to outliers), "MAE", or "MSE
 
 # AR-Net Architecture (Deep Learning Configuration)
 # Per docs: n_lags should be >= n_forecasts for effective AR
-n_lags = 288                       # 24 hours context (96 * 15min = 24h)
+n_lags = 288                       # 72 hours context (288 * 15min = 72h)
 n_forecasts = 96                  # Predict 24 hours at once (96 * 15min = 24h)
 ar_days = -1                      # Days to use AR (1=first day only, 0=disable, -1=always)
 
