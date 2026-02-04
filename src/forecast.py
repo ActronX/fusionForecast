@@ -132,7 +132,7 @@ def run_forecast():
     print(f"Starting recursive forecasting for {len(df_future_final)} periods...")
     
     # Initialize history with real data
-    current_history = df_history_final.tail(n_lags).copy()
+    current_history = df_history_final.tail(n_lags * 2).copy() if not df_history_final.empty else pd.DataFrame()
     future_points = df_future_final.copy()
     predictions = []
     
@@ -162,40 +162,39 @@ def run_forecast():
         
         # Fill any missing values in regressors to avoid model crash
         for r in regressor_names:
-            if chunk[r].isna().any():
+            if r in chunk.columns and chunk[r].isna().any():
                 chunk[r] = chunk[r].interpolate(method='linear', limit_direction='both').fillna(0)
 
         actual_len = len(chunk)
-        chunk['y'] = np.nan # Placeholder for target
         
-        # Padding: NeuralProphet expects input length to match n_forecasts exactly
-        # If the last chunk is smaller, we pad it with dummy data
-        if actual_len < n_forecasts:
-            pad_len = n_forecasts - actual_len
-            last_ds = chunk['ds'].max()
-            padding = pd.DataFrame({
-                'ds': pd.date_range(start=last_ds + pd.Timedelta('15min'), periods=pad_len, freq='15min'),
-                'y': np.nan
-            })
-            # Copy last known regressor values to padding
-            for col in regressor_names:
-                padding[col] = chunk[col].iloc[-1]
-                
-            chunk = pd.concat([chunk, padding], ignore_index=True)
-
-        # Prepare Input: Concatenate (Last known History) + (Future Chunk)
         # Check if we're past the AR cutoff date
         chunk_start = chunk['ds'].min()
         use_ar_history = ar_cutoff is None or chunk_start < ar_cutoff
         
-        if use_ar_history and n_lags > 0:
-            # Use AR: include historical context
-            step_input = pd.concat([current_history.tail(n_lags), chunk], ignore_index=True)
-        else:
-            # No AR: only use regressors, fill y with zeros
-            step_input = chunk.copy()
-            step_input['y'] = 0.0  # Model needs y column but won't use AR
-        step_input = step_input.drop_duplicates(subset='ds', keep='last')  # Remove duplicate timestamps
+        # Use native make_future_dataframe when possible (recommended by NeuralProphet docs)
+        try:
+            if use_ar_history and n_lags > 0 and not current_history.empty:
+                # Native method: let NeuralProphet handle the future dataframe construction
+                step_input = model.make_future_dataframe(
+                    df=current_history.tail(n_lags),
+                    periods=actual_len,
+                    regressors_df=chunk,
+                    n_historic_predictions=True
+                )
+            else:
+                # Fallback for non-AR: manual construction
+                step_input = chunk.copy()
+                step_input['y'] = 0.0
+        except Exception as e:
+            # Fallback to manual method if make_future_dataframe fails
+            chunk['y'] = np.nan
+            if use_ar_history and n_lags > 0:
+                step_input = pd.concat([current_history.tail(n_lags), chunk], ignore_index=True)
+            else:
+                step_input = chunk.copy()
+                step_input['y'] = 0.0
+        
+        step_input = step_input.drop_duplicates(subset='ds', keep='last')
         step_input['y'] = pd.to_numeric(step_input['y'], errors='coerce')
 
         try:

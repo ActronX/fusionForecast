@@ -72,24 +72,48 @@ night_threshold = 50     # Ignore values <= this (Watts)
 
 [model.neuralprophet]
 # NeuralProphet specific forecasting settings
-yearly_seasonality = false        # PV is consistent daily, yearly matters but can be simple
-weekly_seasonality = false        # Weekly patterns less relevant for PV?
+# Based on: https://neuralprophet.com/how-to-guides/application-examples/energy_solar_pv.html
+
+# Seasonality Configuration
+yearly_seasonality = false        # PV is consistent daily, yearly handled by AR/regressors
+weekly_seasonality = false        # Weekly patterns less relevant for PV
 daily_seasonality = true          # Strong daily cycle for PV
-seasonality_mode = "additive"     # Additive is often simpler/stable
-growth = "off"                    # Disable trend for PV (often stationary enough or handled by seasonality)
+seasonality_mode = "additive"     # Additive is simpler/more stable
 
-learning_rate = 0.01             # Explicit LR based on tuning (Auto was unreliable)
-# epochs = null                    # Enable NeuralProphet auto epochs
-batch_size = 256                  # Batch size for training (reduced to allow proper Auto-LR finding)
-# Regularization parameters
-seasonality_reg = 0.0
-ar_reg = 0.05                      # AutoRegressive regularization
+# Trend Configuration
+growth = "off"                    # Disable trend - recommended for pure AR-based PV forecasting
+
+# Training Parameters
+# NOTE: learning_rate is now DYNAMIC in train.py:
+#   - 0.003 when ar_layers is non-empty (prevents gradient vanishing)
+#   - Auto (null) when ar_layers is empty (linear model)
+# Set explicit value here to override, or leave null for auto-detection
+# learning_rate = (not set)        # Let train.py determine based on ar_layers
+
+# epochs = null                   # Enable NeuralProphet auto epochs
+batch_size = 128                  # Batch size for training
+
+# Regularization Parameters
+seasonality_reg = 0.0             # Seasonality regularization (0.1-100, higher = more dampening)
+ar_reg = 0.5                       # AR sparsity: 0.1=light, 1.0=moderate, 10=extreme (unstable)
+
+# Regressor Configuration
 regressor_mode = "additive"       # Regressor mode: "additive" or "multiplicative"
-accelerator = "auto" # "cpu", "gpu", or "auto"
-loss_func = "Huber"  # "Huber", "MAE", or "MSE"
 
-# Network Architecture (Deep Learning Configuration)
-n_lags = 96                # 24 hours context (96 * 15min)
-n_forecasts = 96           # Predict 24 hours at once (96 * 15min)
-ar_days = -1                # Days to use AR for (1 = only first day, 0 = disable AR, -1 = always)
-ar_layers = []             # Linear AR (no hidden layers) - Sufficient for this data!
+# Hardware Acceleration
+accelerator = "auto"              # "cpu", "gpu", or "auto"
+
+# Loss Function
+loss_func = "Huber"               # "Huber" (robust to outliers), "MAE", or "MSE"
+
+# AR-Net Architecture (Deep Learning Configuration)
+# Per docs: n_lags should be >= n_forecasts for effective AR
+n_lags = 288                       # 24 hours context (96 * 15min = 24h)
+n_forecasts = 96                  # Predict 24 hours at once (96 * 15min = 24h)
+ar_days = -1                      # Days to use AR (1=first day only, 0=disable, -1=always)
+
+# AR Hidden Layers
+# [] = Linear AR (simpler, often sufficient for PV)
+# [64] = Single hidden layer with 64 neurons (more complex patterns)
+# [32,32,32,32] = Deep AR-Net (used in Solar PV docs example)
+ar_layers = []                    # Linear AR - sufficient for most PV forecasting

@@ -184,6 +184,15 @@ def fetch_training_data(verbose=True):
     if df_prophet is None:
         return None
     
+    # Apply interpolation to fill gaps (e.g. missing daytime data)
+    if verbose:
+        nan_count = df_prophet['y'].isna().sum()
+        if nan_count > 0:
+            print(f"  - Interpolating {nan_count} missing values ({nan_count/len(df_prophet)*100:.1f}%)")
+            
+    df_prophet['y'] = df_prophet['y'].interpolate(method='linear', limit_direction='both')
+    df_prophet['y'] = df_prophet['y'].fillna(0)  # Fill any remaining edges with 0
+    
     # 2. Fetch Regressor Data
     if verbose:
         print(f"  - Fetching {len(REGRESSOR_FIELDS)} regressors...")

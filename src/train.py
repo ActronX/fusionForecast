@@ -118,11 +118,26 @@ def train_model():
     df_prophet = df_prophet.fillna(0)
     df_prophet = df_prophet.reset_index()
     
-    print(f"Training data shape after gap-filling: {df_prophet.shape}")
+    print(f"Training data summary after gap-filling: {df_prophet.shape}")
     print(f"Training data summary after gap-filling:\n{df_prophet.describe()}")
 
+    # Split data for validation (recommended by NeuralProphet docs)
+    validation_pct = p_settings.get('validation_pct', 0.1)
+    print(f"\nSplitting data: {100*(1-validation_pct):.0f}% train, {100*validation_pct:.0f}% validation...")
+    df_train, df_val = model.split_df(df_prophet, freq='15min', valid_p=validation_pct)
+    print(f"  Train: {len(df_train)} rows, Validation: {len(df_val)} rows")
+
     print("Fitting model...")
-    model.fit(df_prophet, freq='15min')
+    metrics = model.fit(df_train, freq='15min', validation_df=df_val)
+    
+    # Show final metrics
+    if metrics is not None and len(metrics) > 0:
+        final = metrics.tail(1).iloc[0]
+        print(f"\n[Training Complete]")
+        print(f"  Final Train RMSE: {final.get('RMSE', 'N/A'):.2f}")
+        print(f"  Final Val RMSE:   {final.get('RMSE_val', 'N/A'):.2f}")
+        print(f"  Final Train MAE:  {final.get('MAE', 'N/A'):.2f}")
+        print(f"  Final Val MAE:    {final.get('MAE_val', 'N/A'):.2f}")
     
     # Save trained model
     model_path = settings['model']['path']

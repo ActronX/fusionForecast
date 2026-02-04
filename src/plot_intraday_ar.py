@@ -99,44 +99,70 @@ def extract_diagonal_forecast(forecast, n_lags, n_forecasts):
     """
     Extract diagonal yhat values for multi-step forecasting.
     
-    NeuralProphet with n_forecasts>1 outputs yhat1..yhatN for each row.
-    For proper future forecasting, we need to extract the "diagonal":
-    - Row at n_lags+0: use yhat1 (1-step ahead)
-    - Row at n_lags+1: use yhat2 (2-step ahead)
+    NeuralProphet fills predictions diagonally:
+    - First future row has yhat1 (used for that row)
+    - First future row also has yhat2..yhatN (used for subsequent rows)
+    - Second future row has yhat2..yhatN (for rows after it)
     - etc.
     
-    This fills in the 'yhat_combined' column with the correct forecast value.
+    For proper extraction, we use the first future row as the source.
     """
     result = forecast.copy()
     result['yhat_combined'] = np.nan
     result['ar_combined'] = np.nan
     
-    # For historical rows (with y values), use yhat1
-    hist_mask = result['y'].notna()
+    # Find historical vs future rows
+    hist_rows = result[result['y'].notna()]
+    if hist_rows.empty:
+        print("  Warning: No historical rows found")
+        return result
+    
+    last_hist_idx = hist_rows.index[-1]
+    
+    # For historical rows, use yhat1
+    hist_mask = result.index <= last_hist_idx
     if 'yhat1' in result.columns:
         result.loc[hist_mask, 'yhat_combined'] = result.loc[hist_mask, 'yhat1']
     if 'ar1' in result.columns:
         result.loc[hist_mask, 'ar_combined'] = result.loc[hist_mask, 'ar1']
     
     # For future rows, extract diagonal values
-    future_mask = result['y'].isna()
+    future_mask = result.index > last_hist_idx
     future_indices = result.index[future_mask].tolist()
     
+    if not future_indices:
+        print("  No future rows to process")
+        return result
+    
+    first_future_idx = future_indices[0]
+    print(f"  Extracting diagonal for {len(future_indices)} future rows, using source={first_future_idx}...")
+    
     for i, idx in enumerate(future_indices):
-        step = (i % n_forecasts) + 1  # Which forecast step to use
-        yhat_col = f'yhat{step}'
-        ar_col = f'ar{step}'
+        step = i + 1  # 1-indexed: first future row = step 1
         
-        if yhat_col in result.columns:
-            # Look back to find the row that predicted this timestamp
-            source_idx = max(0, idx - step + 1)
-            if source_idx in result.index and yhat_col in result.columns:
-                result.loc[idx, 'yhat_combined'] = result.loc[source_idx, yhat_col]
-        
-        if ar_col in result.columns:
-            source_idx = max(0, idx - step + 1)
-            if source_idx in result.index:
-                result.loc[idx, 'ar_combined'] = result.loc[source_idx, ar_col]
+        if step <= n_forecasts:
+            yhat_col = f'yhat{step}'
+            ar_col = f'ar{step}'
+            
+            # Use first future row as source (it has all yhat values)
+            if yhat_col in result.columns and pd.notna(result.loc[first_future_idx, yhat_col]):
+                result.loc[idx, 'yhat_combined'] = result.loc[first_future_idx, yhat_col]
+            if ar_col in result.columns and pd.notna(result.loc[first_future_idx, ar_col]):
+                result.loc[idx, 'ar_combined'] = result.loc[first_future_idx, ar_col]
+        else:
+            # Beyond n_forecasts: wrap around
+            wrapped_step = ((step - 1) % n_forecasts) + 1
+            yhat_col = f'yhat{wrapped_step}'
+            ar_col = f'ar{wrapped_step}'
+            
+            if yhat_col in result.columns and pd.notna(result.loc[first_future_idx, yhat_col]):
+                result.loc[idx, 'yhat_combined'] = result.loc[first_future_idx, yhat_col]
+            if ar_col in result.columns and pd.notna(result.loc[first_future_idx, ar_col]):
+                result.loc[idx, 'ar_combined'] = result.loc[first_future_idx, ar_col]
+    
+    valid_count = result['yhat_combined'].notna().sum()
+    future_valid = result.loc[future_mask, 'yhat_combined'].notna().sum()
+    print(f"  Diagonal extraction complete: {valid_count} total valid ({future_valid} future)")
     
     return result
 
