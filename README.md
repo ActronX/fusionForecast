@@ -74,6 +74,13 @@ For production use, Docker provides the easiest and most reliable deployment met
    docker-compose ps
    ```
 
+5. **Access InfluxDB Dashboard**:
+   - URL: [http://localhost:8086](http://localhost:8086)
+   - Username: `admin` (or as defined in your setup)
+   - Password: `password` (or as defined in your setup)
+   - Organization: `fusionforecast`
+
+
 ### Configuration via `.env`
 
 The Docker setup uses environment variables to configure both InfluxDB and the application.

@@ -219,7 +219,7 @@ echo ""
 echo "Scheduled tasks:"
 echo "  - Fetch weather data: every 15 minutes"
 echo "  - Create forecast: every 15 minutes"
-echo "  - Update nowcast: every 15 minutes"
+
 echo ""
 
 # Execute the main command (keeping container alive)

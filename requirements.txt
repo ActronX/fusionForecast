@@ -1,19 +1,31 @@
---extra-index-url https://download.pytorch.org/whl/cu121
-neuralprophet[live]
-pandas>=2.0,<3.0.0
+# Core Libraries
 numpy==1.26.4
-torch==2.5.1+cu121
-torchvision==0.20.1+cu121
-torchaudio==2.5.1+cu121
+pandas>=2.0,<3.0.0
+neuralprophet[live]
+pvlib
+plotly>=5.0
+
+
+# Infrastructure & API
 influxdb-client>=1.36
 tomli>=2.0; python_version < "3.11"
-plotly>=5.0
 openmeteo-requests
 requests-cache
 retry-requests
-optuna
-pvlib
-plotly-resampler>=0.9.0
-ipywidgets>=8.0.0
+
+# PyTorch Configuration
+# ---------------------
+# Default: CPU Only
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch
+torchvision
+torchaudio
+
+# CUDA Support (Uncomment for GPU acceleration)
+# NOTE: Comment out the CPU section above if enabling this
+# --extra-index-url https://download.pytorch.org/whl/cu121
+# torch==2.5.1+cu121
+# torchvision==0.20.1+cu121
+# torchaudio==2.5.1+cu121
 
 

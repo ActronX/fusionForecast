@@ -4,9 +4,6 @@
 # Create forecast every 15 minutes (at minute 3, 18, 33, 48)
 3,18,33,48 * * * * root cd /app && /opt/venv/bin/python3 -m src.forecast >> /app/logs/cron.log 2>&1
 
-# Update nowcast every 15 minutes (at minute 5, 20, 35, 50)
-5,20,35,50 * * * * root cd /app && /opt/venv/bin/python3 -m src.nowcast >> /app/logs/cron.log 2>&1
-
 # Fetch historic weather data and retrain model once a month (1st at 01:00 AM)
 0 1 1 * * root cd /app && /opt/venv/bin/python3 -m src.fetch_historic_weather >> /app/logs/cron.log 2>&1
 
