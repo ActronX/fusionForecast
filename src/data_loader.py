@@ -26,7 +26,6 @@ LIVE_SCALE = PREPROCESSING.get('live_scale', 1.0)
 REGRESSOR_SCALE = PREPROCESSING.get('regressor_scale', 1.0)
 PRODUCED_OFFSET = PREPROCESSING.get('produced_offset', '0m')
 REGRESSOR_OFFSET = PREPROCESSING.get('regressor_offset', '0m')
-NIGHT_THRESHOLD = PREPROCESSING.get('night_threshold', 50)
 
 # Model Configuration
 TRAINING_DAYS = settings['model']['training_days']

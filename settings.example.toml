@@ -68,7 +68,6 @@ regressor_scale = 1.0 # Multiplier for weather data
 produced_offset = "-30m" # Align production timestamps
 regressor_offset = "0m"  # Align weather timestamps
 forecast_offset = "0m"   # Shift output timestamps
-night_threshold = 50     # Ignore values <= this (Watts)
 
 [model.neuralprophet]
 # NeuralProphet specific forecasting settings

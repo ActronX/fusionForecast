@@ -26,7 +26,7 @@ sys.path.append(os.getcwd())
 # Internal modules
 from src.config import settings
 from src.db import InfluxDBWrapper
-from src.preprocess import postprocess_forecast
+from src.preprocess import postprocess_forecast, apply_nighttime_zero
 from src.data_loader import fetch_intraday_data, fetch_future_regressors
 
 # Suppress common noise warnings
@@ -136,16 +136,8 @@ def run_forecast():
     future_points = df_future_final.copy()
     predictions = []
     
-    # AR cutoff configuration: after ar_days, don't use AR history
-    # -1 = always use AR, 0 = never use AR, N = use AR for first N days
-    ar_days = settings['model']['neuralprophet'].get('ar_days', -1)
-    forecast_start = df_future_final['ds'].min()
-    ar_cutoff = forecast_start + pd.Timedelta(days=ar_days) if ar_days >= 0 else None
     
-    if ar_cutoff:
-        print(f"AR will be used until: {ar_cutoff.strftime('%Y-%m-%d %H:%M')} (ar_days={ar_days})")
-    
-    # Filter future to start after history ends (avoid overlap)
+    # Iterate through the future dataframe in chunks of size 'n_forecasts'
     if not current_history.empty:
         last_history_ds = current_history['ds'].max()
         original_len = len(future_points)
@@ -169,7 +161,7 @@ def run_forecast():
         
         # Check if we're past the AR cutoff date
         chunk_start = chunk['ds'].min()
-        use_ar_history = ar_cutoff is None or chunk_start < ar_cutoff
+        use_ar_history = True # Always use AR history if lags > 0
         
         # Use native make_future_dataframe when possible (recommended by NeuralProphet docs)
         try:
@@ -274,9 +266,17 @@ def run_forecast():
     # Prepare for Database Write
     forecast_to_write = forecast[['ds', 'yhat']].copy()
     
-    # Apply simple night filter (force 0 if below threshold)
-    threshold = settings['model'].get('preprocessing', {}).get('night_threshold', 50)
-    forecast_to_write.loc[forecast_to_write['yhat'] <= threshold, 'yhat'] = 0
+    # Apply nighttime zeroing based on solar position (Replaces simple threshold filter)
+    lat = settings['station']['latitude']
+    lon = settings['station']['longitude']
+    forecast_to_write = apply_nighttime_zero(
+        forecast_to_write, 
+        lat=lat, 
+        lon=lon, 
+        time_col='ds', 
+        value_col='yhat',
+        verbose=True
+    )
     
     # InfluxDB Formatting
     target_bucket = settings['influxdb']['buckets']['target_forecast']
