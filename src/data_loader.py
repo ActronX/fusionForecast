@@ -196,16 +196,11 @@ def fetch_training_data(verbose=True):
     if verbose:
         print("  - Applying nighttime zeroing...")
     
-    lat = settings['station']['latitude']
-    lon = settings['station']['longitude']
-    
     # Ensure ds is datetime for pvlib
     df_prophet['ds'] = pd.to_datetime(df_prophet['ds'])
     
     df_prophet = apply_nighttime_zero(
         df_prophet, 
-        lat=lat, 
-        lon=lon, 
         time_col='ds', 
         value_col='y',
         verbose=verbose

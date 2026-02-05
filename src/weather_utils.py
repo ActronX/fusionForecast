@@ -124,3 +124,22 @@ def process_hourly_data(response, hourly_params_list):
     df_hourly_resampled = df_hourly.resample('15min').interpolate(method='linear')
     
     return df_hourly_resampled
+
+from src.config import settings
+
+def get_solar_position(times):
+    """
+    Wrapper for pvlib.solarposition.get_solarposition using location from settings.
+    
+    Note on Azimuth:
+    - pvlib uses: 0=North, 90=East, 180=South, 270=West
+    - Settings/Open-Meteo uses: 0=South, -90=East, 90=West, 180=North
+    
+    This function uses the latitude, longitude, and altitude from settings.toml.
+    """
+    lat = settings['station']['latitude']
+    lon = settings['station']['longitude']
+    altitude = settings['station'].get('altitude', 0)
+    
+    location = pvlib.location.Location(lat, lon, altitude=altitude)
+    return location.get_solarposition(times)

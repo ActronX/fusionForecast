@@ -72,7 +72,7 @@ def run_tuning():
     param_grid = {
         # AR-Net Configuration
         # n_lags >= n_forecasts recommended by docs
-        'n_lags': [4, 8, 96, 288],       # 1 day, 2 days, 3 days context (at 15-min intervals)
+        'n_lags': [4, 8,48, 96, 192, 288],       # 1 day, 2 days, 3 days context (at 15-min intervals)
         'n_forecasts': [96],             # Fixed: 1 day ahead
         
         # AR-Net Architecture
