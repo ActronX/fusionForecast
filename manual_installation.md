@@ -77,6 +77,7 @@ Fine-tuning of data before it entering the ML model.
 - `max_power_clip`: Hard limit in Watts to remove outliers or non-physical spikes.
 - `produced_scale` / `regressor_scale`: Multipliers to normalize data (e.g., if your meter stores kW but you want Watts).
 - `produced_offset` / `regressor_offset`: Crucial for aligning timestamps (e.g., if one source is 1h ahead).
+- *Note*: Nighttime values are automatically set to 0 based on solar position (elevation < -3°).
 
 #### 8. NeuralProphet ML Engine `[model.neuralprophet]`
 Specific settings for the NeuralProphet model (PyTorch-based deep learning framework).
@@ -251,7 +252,7 @@ To optimize the model's accuracy, you can tune the hyperparameters (e.g., `ar_la
 
 #### Evaluation Metrics
 
-The tuning script evaluates model performance using Cross-Validation and calculates the following metrics. **Note**: To ensure relevance for PV systems, values below the `night_threshold` (defined in settings, e.g., 50 W) are **excluded** from these calculations. This prevents the metrics from being artificially improved by easy "0 Watt" predictions during the night.
+The tuning script evaluates model performance using Cross-Validation and calculates the following metrics. **Note**: To ensure relevance for PV systems, values during nighttime (solar elevation < -3°) are **excluded** from these calculations. This prevents the metrics from being artificially improved by easy "0 Watt" predictions during the night.
 
 *   **RMSE (Root Mean Squared Error)**:
     *   **What it is**: The square root of the average squared differences between incorrect forecasts and actual values.

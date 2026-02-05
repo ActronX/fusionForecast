@@ -54,7 +54,7 @@ services:
       - STATION_AZIMUTH=${STATION_AZIMUTH:-0}
       - MODEL_TRAINING_DAYS=${MODEL_TRAINING_DAYS:-30}
       - MAX_POWER_CLIP=${MAX_POWER_CLIP:-6000}
-      - NIGHT_THRESHOLD=${NIGHT_THRESHOLD:-50}
+
     networks:
       - fusionforecast-network
 

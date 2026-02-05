@@ -57,8 +57,7 @@ if [ -n "$MODEL_TRAINING_DAYS" ]; then sed -i "/\[model\]/,/\[/ s|training_days 
 # Replace values in the [model.preprocessing] section if environment variables are set
 if [ -n "$MAX_POWER_CLIP" ]; then sed -i "/\[model.preprocessing\]/,/\[/ s|max_power_clip = .*|max_power_clip = $MAX_POWER_CLIP|" /app/settings.toml; fi
 
-# Replace values in the [model.tuning] section if environment variables are set
-if [ -n "$NIGHT_THRESHOLD" ]; then sed -i "/\[model.tuning\]/,/\[/ s|night_threshold = .*|night_threshold = $NIGHT_THRESHOLD|" /app/settings.toml; fi
+
 
 # Dynamic start_date calculation based on MODEL_TRAINING_DAYS
 # To ensure we have enough data, we match the training window.

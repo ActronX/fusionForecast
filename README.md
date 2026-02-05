@@ -96,7 +96,8 @@ The Docker setup uses environment variables to configure both InfluxDB and the a
 | `STATION_ALTITUDE` | Station altitude in meters. | `0` |
 | `MODEL_TRAINING_DAYS`| Days of history to use for training. | `30` |
 | `MAX_POWER_CLIP` | Max system output in Watts (outlier clipping).| `6000` |
-| `NIGHT_THRESHOLD` | Watts threshold below which values are treated as night/0. | `50` |
+| `MAX_POWER_CLIP` | Max system output in Watts (outlier clipping).| `6000` |
+
 
 ### Importing Historical PV Data (at least 30 days)
 
