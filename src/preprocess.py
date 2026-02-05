@@ -1,6 +1,41 @@
 
 import pandas as pd
+import pvlib
 from src.config import settings
+
+def apply_nighttime_zero(df: pd.DataFrame, lat: float, lon: float, time_col: str = 'ds', value_col: str = 'y', verbose: bool = False) -> pd.DataFrame:
+    """
+    Sets value_col to 0 when the sun is below the horizon using pvlib.
+    """
+    df = df.copy()
+    
+    # Ensure we have a datetime index or column for calculation
+    if time_col in df.columns:
+        times = pd.to_datetime(df[time_col])
+    elif isinstance(df.index, pd.DatetimeIndex):
+        times = df.index
+    else:
+        raise ValueError(f"Column {time_col} not found and index is not DatetimeIndex")
+
+    # pvlib expects localized times or UTC. 
+    # If naive, assume UTC or local standard time? 
+    # The project seems to operate on naive timestamps (assumed local or UTC from Influx).
+    # get_solarposition handles naive as UTC by default if no tz is given, or local if provided.
+    # To be safe and consistent with settings, we should probably assume the time is compatible with the lat/lon.
+    
+    solpos = pvlib.solarposition.get_solarposition(times, lat, lon)
+    
+    # elevation > 0 means day. <= 0 means night (civil twilight etc aside, or use a small threshold like 0 or -3)
+    # Using 0 as strict horizon.
+    is_night = solpos['elevation'] <= -3
+    
+    n_modified = is_night.sum()
+    if verbose and n_modified > 0:
+        print(f"  [Nighttime Correction] Setting {n_modified} data points to 0 based on solar position.")
+
+    df.loc[is_night.values, value_col] = 0.0
+    
+    return df
 
 def truncate_time_column(df: pd.DataFrame, freq: str = '1h') -> pd.DataFrame:
     """

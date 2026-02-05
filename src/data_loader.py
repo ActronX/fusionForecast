@@ -6,7 +6,7 @@ All scaling configuration is applied here - consumers receive data in Watt units
 import pandas as pd
 from src.db import InfluxDBWrapper
 from src.config import settings
-from src.preprocess import preprocess_data, prepare_prophet_dataframe
+from src.preprocess import preprocess_data, prepare_prophet_dataframe, apply_nighttime_zero
 
 
 # ============================================================================
@@ -192,6 +192,26 @@ def fetch_training_data(verbose=True):
     
     if df_prophet is None:
         return None
+
+    # Apply Nighttime Zeroing
+    if verbose:
+        print("  - Applying nighttime zeroing...")
+    
+    lat = settings['station']['latitude']
+    lon = settings['station']['longitude']
+    
+    # Ensure ds is datetime for pvlib
+    df_prophet['ds'] = pd.to_datetime(df_prophet['ds'])
+    
+    df_prophet = apply_nighttime_zero(
+        df_prophet, 
+        lat=lat, 
+        lon=lon, 
+        time_col='ds', 
+        value_col='y',
+        verbose=verbose
+    )
+
     
     # 2. Fetch Regressor Data
     if verbose:
@@ -225,7 +245,7 @@ def fetch_training_data(verbose=True):
         return None
     
     if verbose:
-        print(f"  ✓ Loaded {len(df_prophet)} samples successfully")
+        print(f"  [OK] Loaded {len(df_prophet)} samples successfully")
     
     return df_prophet, REGRESSOR_FIELDS
 
