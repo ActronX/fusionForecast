@@ -42,7 +42,7 @@ REGRESSOR_FIELDS = REG_CONFIG if isinstance(REG_CONFIG, list) else [REG_CONFIG]
 # ============================================================================
 
 def _build_flux_query(bucket, measurement, fields, range_start, range_stop=None, 
-                      scale=1.0, offset='0m', interpolate=False, verbose=True):
+                      scale=1.0, offset='0m', interpolate=False, downsample=False, verbose=True):
     """
     Build a standard Flux query with scaling, time offset, and optional interpolation.
     
@@ -54,7 +54,10 @@ def _build_flux_query(bucket, measurement, fields, range_start, range_stop=None,
         range_stop: Time range stop (e.g., 'now()' or '14d'), default None
         scale: Scaling factor to apply
         offset: Time offset to apply
-        interpolate: If True, use aggregateWindow and fill to interpolate
+        scale: Scaling factor to apply
+        offset: Time offset to apply
+        interpolate: If True, use linear interpolation to fill gaps at 15min intervals
+        downsample: If True, aggregate to 15min windows before processing (for high-freq data)
         verbose: If True, print the generated query
     
     Returns:
@@ -74,9 +77,13 @@ def _build_flux_query(bucket, measurement, fields, range_start, range_stop=None,
     else:
         range_clause = f'range(start: {range_start})'
     
-    # Check if we need date import for dynamic time expressions
+    # Check if we need imports for dynamic time expressions or interpolation
     needs_date_import = 'date.sub' in range_start or (range_stop and 'date.' in range_stop)
-    import_stmt = 'import "date"\n    ' if needs_date_import else ''
+    import_stmt = ''
+    if needs_date_import:
+        import_stmt += 'import "date"\n    '
+    if interpolate:
+        import_stmt += 'import "interpolate"\n    '
     
     query = f'''
     {import_stmt}from(bucket: "{bucket}")
@@ -88,10 +95,13 @@ def _build_flux_query(bucket, measurement, fields, range_start, range_stop=None,
     if scale != 1.0:
         query += f'  |> map(fn: (r) => ({{ r with _value: r._value * {scale} }}))\n'
     
-    # Add interpolation: create 15-min windows and forward-fill missing values
-    if interpolate:
+    # Downsample high-frequency data (e.g. 10s from live bucket) to 15min
+    if downsample:
         query += '  |> aggregateWindow(every: 15m, fn: mean, createEmpty: true)\n'
-        query += '  |> fill(usePrevious: true)\n'
+        
+    # Linear interpolation to fill gaps
+    if interpolate:
+        query += '  |> interpolate.linear(every: 15m)\n'
     
     if offset != '0m':
         query += f'  |> timeShift(duration: {offset})\n'
@@ -185,15 +195,6 @@ def fetch_training_data(verbose=True):
     if df_prophet is None:
         return None
     
-    # Apply interpolation to fill gaps (e.g. missing daytime data)
-    if verbose:
-        nan_count = df_prophet['y'].isna().sum()
-        if nan_count > 0:
-            print(f"  - Interpolating {nan_count} missing values ({nan_count/len(df_prophet)*100:.1f}%)")
-            
-    df_prophet['y'] = df_prophet['y'].interpolate(method='linear', limit_direction='both')
-    df_prophet['y'] = df_prophet['y'].fillna(0)  # Fill any remaining edges with 0
-    
     # 2. Fetch Regressor Data
     if verbose:
         print(f"  - Fetching {len(REGRESSOR_FIELDS)} regressors...")
@@ -205,7 +206,6 @@ def fetch_training_data(verbose=True):
         range_start=range_start,
         scale=REGRESSOR_SCALE,
         offset=REGRESSOR_OFFSET,
-        interpolate=True,
         verbose=verbose
     )
     
@@ -274,7 +274,8 @@ def fetch_intraday_data(db, fetch_hours, regressor_fields):
         range_start=f'date.sub(d: {int(fetch_hours)}h, from: now())',
         range_stop='now()',
         scale=LIVE_SCALE,
-        interpolate=True
+        interpolate=True,
+        downsample=True
     )
     
     df_target = db.query_dataframe(query_target)
