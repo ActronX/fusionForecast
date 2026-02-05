@@ -104,23 +104,8 @@ def train_model():
             mode=reg_mode
         )
     
-    # Lagged regressors are now handled by n_lags (Autoregression)
-    # Manual add_lagged_regressor loop removed as we use built-in AR for the target variable.
-
-
-
-    
     print(f"Training data summary before processing:\n{df_prophet.describe()}")
     
-    # Ensure continuous time index and fill gaps with 0 (PV systems produce 0 at night)
-    df_prophet['ds'] = pd.to_datetime(df_prophet['ds'])
-    df_prophet = df_prophet.set_index('ds').resample('15min').mean()
-    df_prophet = df_prophet.fillna(0)
-    df_prophet = df_prophet.reset_index()
-    
-    print(f"Training data summary after gap-filling: {df_prophet.shape}")
-    print(f"Training data summary after gap-filling:\n{df_prophet.describe()}")
-
     # Split data for validation (recommended by NeuralProphet docs)
     validation_pct = p_settings.get('validation_pct', 0.1)
     print(f"\nSplitting data: {100*(1-validation_pct):.0f}% train, {100*validation_pct:.0f}% validation...")
