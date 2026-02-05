@@ -60,14 +60,7 @@ def train_model():
     # Determine AR-Net architecture
     ar_layers = p_settings.get('ar_layers', [])
     
-    # Learning rate: use lower value (0.003) when using hidden layers in AR-Net
-    # Per NeuralProphet docs: "For a high enough learning rate (probably > 0.1), 
-    # the gradient vanishes and forces the AR net output to 0"
-    if ar_layers:
-        default_lr = 0.003  # Lower LR for deep AR-Net
-    else:
-        default_lr = None   # Auto for linear AR
-    learning_rate = p_settings.get('learning_rate', default_lr)
+    learning_rate = p_settings.get('learning_rate', 0.1)
     
     # Initialize NeuralProphet model with configured parameters
     model = NeuralProphet(
