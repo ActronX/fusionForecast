@@ -4,7 +4,6 @@ All scaling configuration is applied here - consumers receive data in Watt units
 """
 
 import pandas as pd
-import numpy as np
 from src.db import InfluxDBWrapper
 from src.config import settings
 from src.preprocess import preprocess_data, prepare_prophet_dataframe
@@ -54,8 +53,7 @@ def _build_flux_query(bucket, measurement, fields, range_start, range_stop=None,
         range_stop: Time range stop (e.g., 'now()' or '14d'), default None
         scale: Scaling factor to apply
         offset: Time offset to apply
-        scale: Scaling factor to apply
-        offset: Time offset to apply
+
         interpolate: If True, use linear interpolation to fill gaps at 15min intervals
         downsample: If True, aggregate to 15min windows before processing (for high-freq data)
         verbose: If True, print the generated query
