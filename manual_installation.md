@@ -138,6 +138,9 @@ Future Production = f(Past Production, Weather Forecast, Time Patterns)
 1. **Initialization**: The model receives the last 24 hours (`n_lags=96`) of actual production data.
 2. **First Prediction**: Using this history + weather forecast + learned daily patterns, it predicts the next 24 hours (`n_forecasts=96`).
 3. **Recursive Continuation**: For predictions beyond 24h, the model feeds its own predictions back as "history" and continues.
+4. **Global Loss Optimization**: This is a key difference to standard autoregressive models.
+    - **Standard AR**: Usually trains to only minimize the error for the *next single step* ($t+1$). To predict a full day ($t+96$), it must be run recursively 96 times. Small errors in the first steps accumulate and "snowball" into large errors later in the day.
+    - **FusionForecast (NeuralProphet)**: Trains to minimize the error over the **entire forecast horizon** ($t+1 \dots t+96$) simultaneously. The model outputs a vector of 96 values at once, and the optimizer adjusts weights to ensure the *whole trajectory* is accurate, not just the start. This leads to much more stable multi-step predictions.
 
 **Visual Example (15-min intervals):**
 ```
