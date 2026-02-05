@@ -47,13 +47,13 @@ def _check_data_density(db, bucket, measurement, field, start_date, end_date):
     Checks if data coverage (days with data) is at least 90% in the given range.
     """
     # Count number of days that have at least one data point
+    # Remove count() aggregation to get individual windows
     query = f'''
     from(bucket: "{bucket}")
       |> range(start: {start_date.isoformat()}Z, stop: {end_date.isoformat()}Z)
       |> filter(fn: (r) => r["_measurement"] == "{measurement}")
       |> filter(fn: (r) => r["_field"] == "{field}")
       |> aggregateWindow(every: 1d, fn: count, createEmpty: false)
-      |> count()
     '''
     df = db.query_dataframe(query)
     
@@ -64,10 +64,20 @@ def _check_data_density(db, bucket, measurement, field, start_date, end_date):
     if df.empty:
         return 0.0, 0, expected_days
     
-    # count() returns the number of non-empty windows in _value
-    actual_days = df['_value'].iloc[0]
+    # Check if the first day actually has data
+    # (Allow 1 day tolerance for timezone alignment issues)
+    first_data_time = pd.to_datetime(df['_time'].iloc[0]).tz_convert(None)
+    headers_gap = (first_data_time - start_date).days
     
-    # Cap actual at expected (in case of boundary overlaps)
+    if headers_gap > 1:
+        # If data starts more than 1 day after the requested start, count it as a failure
+        # to force the window to shrink to the actual start.
+        # Returning 0 density forces a fail.
+        return 0.0, len(df), expected_days
+    
+    actual_days = len(df)
+    
+    # Cap actual at expected
     actual_days = min(actual_days, expected_days)
     
     density = actual_days / expected_days
@@ -164,6 +174,9 @@ def get_max_available_training_days(max_days=None, verbose=False):
             if verbose:
                 print(f"  WARNING: No data found for {item['name']}")
             return max_days, 0.0, 0, 0, None
+        
+        if verbose:
+             print(f"  - {item['name']}: Data starts {t}")
         start_times.append(t)
         
     # Valid history can only start when the *latest* of the start times occurs

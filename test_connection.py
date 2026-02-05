@@ -44,9 +44,19 @@ def test_connection():
             field = settings['influxdb']['fields'].get(f_key, "N/A")
             
             p_bucket = f"{bucket} ({b_key})" if bucket else "MISSING"
-            if bucket: expected_buckets.add(bucket)
+            if bucket: 
+                if isinstance(bucket, list):
+                     for b in bucket: expected_buckets.add(b)
+                else:
+                     expected_buckets.add(bucket)
             
-            print(f"{name:<25} | {purpose:<32} | {p_bucket:<35} | {meas:<20} | {field:<20}")
+            # Helper to safely stringify lists for display
+            s_bucket = str(p_bucket)
+            s_meas = str(meas)
+            s_field = str(field)
+
+            
+            print(f"{name:<25} | {purpose:<32} | {s_bucket:<35} | {s_meas:<20} | {s_field:<20}")
 
         print("-" * 140)
 
@@ -76,6 +86,51 @@ def test_connection():
     except Exception as e:
         print(f"Connection failed with error: {e}")
         sys.exit(1)
+
+    # -------------------------------------------------------------------------
+    # Training History Check (Merged from check_training_history.py)
+    # -------------------------------------------------------------------------
+    print("\n" + "=" * 30)
+    print("Training History Check")
+    print("=" * 30)
+    
+    try:
+        from src.history_validation import get_max_available_training_days
+        
+        current_setting = settings['model']['training_days']
+        print(f"Current Configuration: {current_setting} days")
+        
+        # Check distinct maximum (e.g. 10 years) to find absolute limit
+        # Suppress verbose output from data_loader to keep test_connection output clean(er)
+        # or keep it verbose if user wants details. Let's keep it verbose=True as requested.
+        print("-" * 30)
+        days, density, actual, expected, start_date = get_max_available_training_days(max_days=3650, verbose=True)
+        
+        print("-" * 30)
+        print("RESULT:")
+        if start_date:
+            print(f"  Common Start Date:   {start_date}")
+            print(f"  Max Valid History:   {days} days")
+            print(f"  Data Coverage:       {density:.2%} (All fields checked)")
+            
+            print("-" * 30)
+            print("SUGGESTION:")
+            if days > current_setting:
+                print(f"  \033[92m[UPGRADE]\033[0m You have {days} days of valid data available.")
+                print(f"  Suggestion: Update settings.toml 'training_days' from {current_setting} to {days}.")
+            elif days < current_setting:
+                print(f"  \033[93m[DOWNGRADE]\033[0m Your config ({current_setting}) exceeds valid history ({days}).")
+                print(f"  Suggestion: Update settings.toml 'training_days' from {current_setting} to {days}.")
+            else:
+                print(f"  \033[94m[OK]\033[0m Configuration match. You are using the maximum available data.")
+        else:
+            print("  Status:              \033[91mNO DATA FOUND\033[0m")
+            print("  (This is expected if the database is empty)")
+
+    except ImportError:
+        print("WARNING: Could not import src.data_loader. Skipping history check.")
+    except Exception as e:
+        print(f"WARNING: History check failed: {e}")
 
 if __name__ == "__main__":
     test_connection()
