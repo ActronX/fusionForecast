@@ -1,33 +1,43 @@
 import "date"
+import "array"
 
-// As a precaution, we look until tomorrow morning, but stop/cut off in the script
+// As a precaution, we query until tomorrow morning, but later cut off in the script
 heute_start = date.truncate(t: now(), unit: 1d)
 morgen_frueh = date.add(d: 24h, to: heute_start)
 
-// 1. Get SoC (as before)
-soc_stream = from(bucket: "batterie")
+// 1) SoC with fallback = 0 if bucket "batterie" returns no matching data
+soc_real = from(bucket: "batterie")
   |> range(start: -1h)
   |> filter(fn: (r) => r["_measurement"] == "pv")
   |> filter(fn: (r) => r["_field"] == "USOC")
   |> last()
-  |> map(fn: (r) => ({r with _field: "type_soc"}))
+  // Return a fresh record (no record extension) to avoid duplicate/scoped labels
+  |> map(fn: (r) => ({_time: r._time, _field: "type_soc", _value: float(v: r._value)}))
 
-// 2. Get forecast curve (WITHOUT integral)
-// We take the mean every 15 minutes (15m) to avoid having too many data points
+// Fallback row used when soc_real is empty
+soc_fallback = array.from(rows: [
+  {_time: now(), _field: "type_soc", _value: 0.0}
+])
+
+// If soc_real exists, it overrides the fallback; otherwise fallback remains
+soc_stream = union(tables: [soc_fallback, soc_real])
+  |> last()
+
+// 2) Forecast curve (without integral); use 15m mean to reduce point count
 forecast_stream = from(bucket: "forecast_results")
   |> range(start: heute_start, stop: morgen_frueh)
   |> filter(fn: (r) => r["_measurement"] == "production_forecast")
   |> filter(fn: (r) => r["_field"] == "power_produced_forecast")
   |> aggregateWindow(every: 15m, fn: mean, createEmpty: false)
-  |> map(fn: (r) => ({r with _field: "type_forecast"}))
+  |> map(fn: (r) => ({_time: r._time, _field: "type_forecast", _value: float(v: r._value)}))
 
 production_stream = from(bucket: "energy_meter")
   |> range(start: -2h, stop: now())
   |> filter(fn: (r) => r["_measurement"] == "energy_meter")
-  |> filter(fn: (r) => r["_field"] == "production") 
+  |> filter(fn: (r) => r["_field"] == "production")
   |> aggregateWindow(every: 15m, fn: mean, createEmpty: false)
-  |> map(fn: (r) => ({r with _field: "type_production"}))
+  |> map(fn: (r) => ({_time: r._time, _field: "type_production", _value: float(v: r._value)}))
 
-// 3. Union
+// 3) Union all streams and keep only the relevant columns
 union(tables: [soc_stream, forecast_stream, production_stream])
   |> keep(columns: ["_time", "_field", "_value"])
