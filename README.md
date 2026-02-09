@@ -13,7 +13,6 @@ FusionForecast is an ML-based tool for forecasting time series data (e.g., PV ge
 - **Modeling**: Uses NeuralProphet (PyTorch) for time series forecasting.
 - **Intraday Correction**: Dual-mechanism approach for real-time forecast adjustments:
   - **AR-Net** (`n_lags=96`): Learns autoregressive patterns from the last 24 hours of production to capture short-term trends.
-  - **AR Days Limit** (`ar_days`): Controls how many days use autoregression (default: 1). After this, only weather regressors are used to prevent error accumulation.
   - **Intraday Correction**: The AR mechanism automatically uses recent live production data to adjust the forecast start point.
 - **Server-Side Aggregation**: Performs downsampling (e.g., to 1h means) directly in the database.
 - **Configurable**: All settings (buckets, measurements, offsets) are defined in `settings.toml`.
@@ -95,7 +94,6 @@ The Docker setup uses environment variables to configure both InfluxDB and the a
 | `STATION_AZIMUTH` | Azimuth (0=South, -90=East, 90=West). | `0` |
 | `STATION_ALTITUDE` | Station altitude in meters. | `0` |
 | `MODEL_TRAINING_DAYS`| Days of history to use for training. | `30` |
-| `MAX_POWER_CLIP` | Max system output in Watts (outlier clipping).| `6000` |
 | `MAX_POWER_CLIP` | Max system output in Watts (outlier clipping).| `6000` |
 
 
@@ -240,7 +238,6 @@ Here is a detailed description of the Python scripts located in `src/`:
 - **`src/forecast.py`**: Generates **Production** forecasts using multi-step prediction with **AR correction**. Uses:
   - **AR-Net**: Autoregressive network initializes with the last 24h of live production.
   - **Recursive Forecasting**: Predicts 24 hours in chunks, feeding predictions back as history for subsequent steps.
-  - **AR Days Limit**: After `ar_days` (default: 1), AR history is disabled to prevent error propagation. Day 2+ uses only weather regressors.
   - Loads the model, fetches future weather data and recent production (via `data_loader.py`), predicts generation, and writes to InfluxDB.
 
 ### Data Fetching & Calculations
@@ -267,7 +264,6 @@ This section describes which data is read from and written to InfluxDB, and why 
     - **Regressor History** (`buckets.regressor_history`): Historical weather data (e.g., solar irradiance) corresponding to the production history.
 - **Why**: The NeuralProphet model needs to learn the relationship between the target variable (Production) and time/weather. The model uses:
   - **AutoRegressive (AR-Net)** with `n_lags=96`: Learns from the last 24 hours of target values to capture short-term patterns and initialize predictions.
-  - **AR Days Limit** (`ar_days`): During forecasting, AR is only used for the first N days (default: 1). This prevents prediction errors from snowballing into future days.
 
 ### 2. Forecasting (Prediction)
 *Scripts: `src/forecast.py`*

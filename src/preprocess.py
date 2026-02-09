@@ -1,6 +1,5 @@
 
 import pandas as pd
-
 from src.weather_utils import get_solar_position
 from src.config import settings
 
@@ -20,9 +19,11 @@ def apply_nighttime_zero(df: pd.DataFrame, time_col: str = 'ds', value_col: str 
     
     solpos = get_solar_position(times)
     
-    # elevation > 0 means day. <= 0 means night (civil twilight etc aside, or use a small threshold like 0 or -3)
-    # Using 0 as strict horizon.
-    is_night = solpos['elevation'] <= -1
+    # elevation > 0 means day. <= 0 means night (civil twilight etc aside, or use a small threshold like 3 or -3)
+    # Read threshold from settings, default to 2.0 if not found
+    threshold = settings.get('model', {}).get('preprocessing', {}).get('nighttime_elevation_threshold', 2.0)
+    
+    is_night = solpos['elevation'] <= threshold
     
     n_modified = is_night.sum()
     if verbose and n_modified > 0:
@@ -30,6 +31,52 @@ def apply_nighttime_zero(df: pd.DataFrame, time_col: str = 'ds', value_col: str 
 
     df.loc[is_night.values, value_col] = 0.0
     
+    return df
+
+def preprocess_regressors(df: pd.DataFrame, regressor_names: list, freq: str = '15min') -> pd.DataFrame:
+    """
+    Standardizes time axis and fills regressor gaps in one step.
+    
+    Args:
+        df: Input DataFrame (from DB or raw source)
+        regressor_names: List of expected regressor columns
+        freq: Target frequency (default 15min)
+        
+    Returns:
+        pd.DataFrame: Cleaned, resampled, and interpolated DataFrame
+    """
+    # 1. Standardize Time (ds, timezone, frequency)
+    df = prepare_prophet_dataframe(df, freq=freq)
+    
+    # 2. Fill Regressor Gaps (interpolation, numeric conversion, missing columns)
+    df = interpolate_regressors(df, regressor_names)
+    
+    # 3. Final column enforcement
+    cols_to_keep = ['ds'] + [c for c in df.columns if c in regressor_names]
+    df = df[cols_to_keep]
+    
+    return df
+
+def interpolate_regressors(df: pd.DataFrame, regressor_names: list) -> pd.DataFrame:
+    """
+    Ensures all regressor columns are present, interpolates gaps linearly, 
+    and fills remaining NaNs with 0.0.
+    
+    Args:
+        df: DataFrame with 'ds' and potentially regressor columns
+        regressor_names: List of expected regressor column names
+        
+    Returns:
+        pd.DataFrame: DataFrame with all regressors present and filled
+    """
+    df = df.copy()
+    for col in regressor_names:
+        if col not in df.columns:
+            df[col] = 0.0
+        else:
+            # Ensure numeric type before interpolation
+            df[col] = pd.to_numeric(df[col], errors='coerce')
+            df[col] = df[col].interpolate(method='linear', limit_direction='both').fillna(0.0)
     return df
 
 def truncate_time_column(df: pd.DataFrame, freq: str = '1h') -> pd.DataFrame:
@@ -140,7 +187,6 @@ def prepare_prophet_dataframe(df, freq='15min'):
     
     return df
 
-
 def postprocess_forecast(forecast_df):
     """
     Clips forecast values to 0-6000 and sets negatives to 0.
@@ -151,3 +197,65 @@ def postprocess_forecast(forecast_df):
         forecast_df['yhat'] = forecast_df['yhat'].clip(lower=0, upper=max_clip)
     
     return forecast_df
+
+def prepare_forecast_input(model, chunk, current_history, n_lags, n_forecasts, regressor_names):
+    """
+    Prepares the input dataframe for a NeuralProphet prediction step.
+    Handles interpolation, padding, and history concatenation.
+    
+    Args:
+        model: Trained NeuralProphet model
+        chunk: DataFrame containing the future regressors for this step
+        current_history: DataFrame containing the recent history (y and regressors)
+        n_lags: Number of lags in the model
+        n_forecasts: Number of forecast steps
+        regressor_names: List of regressor column names
+        
+    Returns:
+        tuple: (step_input, chunk_padded, actual_len)
+    """
+    import numpy as np # Import locally to avoid top-level dependency if not needed elsewhere
+    
+    chunk = chunk.copy()
+    
+    # Fill any missing values in regressors to avoid model crash
+    chunk = interpolate_regressors(chunk, regressor_names)
+
+    actual_len = len(chunk)
+    
+    # Pad chunk if it's shorter than n_forecasts (to avoid 'negative dimensions' or shape mismatch in NP)
+    if actual_len < n_forecasts:
+        padding_len = n_forecasts - actual_len
+        last_row = chunk.iloc[-1].copy()
+        
+        # Create dates for padding to ensure strict continuity and correct frequency
+        padding_dates = pd.date_range(
+            start=last_row['ds'] + pd.Timedelta(minutes=15),
+            periods=padding_len,
+            freq='15min'
+        )
+        
+        # Create padding dataframe with correct columns and types
+        padding_df = pd.DataFrame(index=range(padding_len), columns=chunk.columns)
+        padding_df['ds'] = padding_dates
+        for col in chunk.columns:
+            if col != 'ds':
+                padding_df[col] = last_row[col]
+        
+        chunk_padded = pd.concat([chunk, padding_df], ignore_index=True)
+    else:
+        chunk_padded = chunk
+    
+    # Use manual construction to avoid 'make_future_dataframe' bugs with regressors
+    # especially in recursive loops where some columns might be missing or all NaN.
+    chunk_padded['y'] = np.nan
+    if n_lags > 0 and not current_history.empty:
+        step_input = pd.concat([current_history.tail(n_lags), chunk_padded], ignore_index=True)
+    else:
+        step_input = chunk_padded.copy()
+        step_input['y'] = 0.0
+    
+    step_input = step_input.drop_duplicates(subset='ds', keep='last')
+    step_input['y'] = pd.to_numeric(step_input['y'], errors='coerce')
+    
+    return step_input, chunk_padded, actual_len

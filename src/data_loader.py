@@ -6,7 +6,7 @@ All scaling configuration is applied here - consumers receive data in Watt units
 import pandas as pd
 from src.db import InfluxDBWrapper
 from src.config import settings
-from src.preprocess import preprocess_data, prepare_prophet_dataframe, apply_nighttime_zero
+from src.preprocess import preprocess_data, prepare_prophet_dataframe, apply_nighttime_zero, interpolate_regressors, preprocess_regressors
 
 
 # ============================================================================
@@ -332,11 +332,12 @@ def fetch_intraday_data(db, fetch_hours, regressor_fields):
     df_regressors = db.query_dataframe(query_regressors)
     
     if not df_regressors.empty:
-        df_regressors = prepare_prophet_dataframe(df_regressors, freq='15min')
-        cols_to_keep = ['ds'] + [c for c in df_regressors.columns if c in regressor_fields]
-        df_regressors = df_regressors[cols_to_keep]
+        df_regressors = preprocess_regressors(df_regressors, regressor_fields, freq='15min')
         df_hist = pd.merge(df_hist, df_regressors, on='ds', how='outer')
     
+    # Final check: Ensure all columns exist in df_hist (for cases where df_regressors was empty)
+    df_hist = interpolate_regressors(df_hist, regressor_fields)
+            
     # Merge and sort (interpolation already done in InfluxDB)
     df_hist = df_hist.sort_values('ds').reset_index(drop=True)
     
@@ -368,13 +369,13 @@ def fetch_future_regressors(db, forecast_days):
     df_future = db.query_dataframe(query_future)
     
     if df_future.empty:
+        print("Error: No future regressor data found")
         return pd.DataFrame()
     
-    df_future = prepare_prophet_dataframe(df_future, freq='15min')
-    cols_to_keep = ['ds'] + [c for c in df_future.columns if c in REGRESSOR_FIELDS]
-    df_future = df_future[cols_to_keep]
+    # Combined standardization and interpolation
+    df_future = preprocess_regressors(df_future, REGRESSOR_FIELDS, freq='15min')
     
-    # Sort (interpolation already done in InfluxDB)
+    # Sort (interpolation already done in InfluxDB and preprocess_regressors)
     df_future = df_future.sort_values('ds').reset_index(drop=True)
     
     return df_future

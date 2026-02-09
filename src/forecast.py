@@ -26,7 +26,7 @@ sys.path.append(os.getcwd())
 # Internal modules
 from src.config import settings
 from src.db import InfluxDBWrapper
-from src.preprocess import postprocess_forecast, apply_nighttime_zero
+from src.preprocess import postprocess_forecast, apply_nighttime_zero, prepare_forecast_input
 from src.data_loader import fetch_intraday_data, fetch_future_regressors
 
 # Suppress common noise warnings
@@ -152,42 +152,15 @@ def run_forecast():
         # Take the next chunk of future regressors
         chunk = future_points.iloc[i : i + n_forecasts].copy()
         
-        # Fill any missing values in regressors to avoid model crash
-        for r in regressor_names:
-            if r in chunk.columns and chunk[r].isna().any():
-                chunk[r] = chunk[r].interpolate(method='linear', limit_direction='both').fillna(0)
-
-        actual_len = len(chunk)
-        
-        # Check if we're past the AR cutoff date
-        chunk_start = chunk['ds'].min()
-        use_ar_history = True # Always use AR history if lags > 0
-        
-        # Use native make_future_dataframe when possible (recommended by NeuralProphet docs)
-        try:
-            if use_ar_history and n_lags > 0 and not current_history.empty:
-                # Native method: let NeuralProphet handle the future dataframe construction
-                step_input = model.make_future_dataframe(
-                    df=current_history.tail(n_lags),
-                    periods=actual_len,
-                    regressors_df=chunk,
-                    n_historic_predictions=True
-                )
-            else:
-                # Fallback for non-AR: manual construction
-                step_input = chunk.copy()
-                step_input['y'] = 0.0
-        except Exception as e:
-            # Fallback to manual method if make_future_dataframe fails
-            chunk['y'] = np.nan
-            if use_ar_history and n_lags > 0:
-                step_input = pd.concat([current_history.tail(n_lags), chunk], ignore_index=True)
-            else:
-                step_input = chunk.copy()
-                step_input['y'] = 0.0
-        
-        step_input = step_input.drop_duplicates(subset='ds', keep='last')
-        step_input['y'] = pd.to_numeric(step_input['y'], errors='coerce')
+        # Prepare Input for Prediction
+        step_input, chunk_padded, actual_len = prepare_forecast_input(
+            model=model,
+            chunk=chunk,
+            current_history=current_history,
+            n_lags=n_lags,
+            n_forecasts=n_forecasts,
+            regressor_names=regressor_names
+        )
 
         try:
             # Predict
@@ -267,17 +240,14 @@ def run_forecast():
     forecast_to_write = forecast[['ds', 'yhat']].copy()
     
     # Apply nighttime zeroing based on solar position (Replaces simple threshold filter)
-    lat = settings['station']['latitude']
-    lon = settings['station']['longitude']
+    # Latitude/Longitude are handled automatically by preprocess.py default mechanism or settings if needed
+    # but the new signature does not accept lat/lon.
     forecast_to_write = apply_nighttime_zero(
         forecast_to_write, 
-        lat=lat, 
-        lon=lon, 
         time_col='ds', 
         value_col='yhat',
-        verbose=True
+        verbose=False
     )
-    
     # InfluxDB Formatting
     target_bucket = settings['influxdb']['buckets']['target_forecast']
     target_meas = settings['influxdb']['measurements']['forecast']

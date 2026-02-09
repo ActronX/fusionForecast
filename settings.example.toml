@@ -38,8 +38,8 @@ forecast = "power_produced_forecast" # Final power production forecast | refs: b
 live     = "production"              # Real-time power for lagged regressor | refs: buckets.live & measurements.live
 
 # Weather/Regressor fields (Source: buckets.regressor_history/future | measurements.regressor_history/future)
-regressor_history    = ["global_tilted_irradiance", "temperature_2m", "clearsky_ghi"]           # Historic total irradiance (training) | refs: buckets.regressor_history & measurements.regressor_history
-regressor_future     = ["global_tilted_irradiance", "temperature_2m", "clearsky_ghi"]           # Forecast total irradiance (prediction) | refs: buckets.regressor_future & measurements.regressor_future
+regressor_history    = ["global_tilted_irradiance", "temperature_2m", "snow_depth", "wind_speed_10m"]           # Historic total irradiance (training) | refs: buckets.regressor_history & measurements.regressor_history
+regressor_future     = ["global_tilted_irradiance", "temperature_2m", "snow_depth", "wind_speed_10m"]           # Forecast total irradiance (prediction) | refs: buckets.regressor_future & measurements.regressor_future
 
 [weather.open_meteo.historic]
 # Historic Data Fetch Settings
@@ -68,6 +68,7 @@ regressor_scale = 1.0 # Multiplier for weather data
 produced_offset = "-30m" # Align production timestamps
 regressor_offset = "0m"  # Align weather timestamps
 forecast_offset = "0m"   # Shift output timestamps
+nighttime_elevation_threshold = 2.0 # Threshold for solar elevation below which production is zeroed
 
 [model.neuralprophet]
 # NeuralProphet specific forecasting settings
@@ -94,7 +95,7 @@ batch_size = 128                  # Batch size for training
 
 # Regularization Parameters
 seasonality_reg = 0.0             # Seasonality regularization (0.1-100, higher = more dampening)
-ar_reg = 0.5                       # AR sparsity: 0.1=light, 1.0=moderate, 10=extreme (unstable)
+ar_reg = 1.0                       # AR sparsity: 0.1=light, 1.0=moderate, 10=extreme (unstable)
 
 # Regressor Configuration
 regressor_mode = "additive"       # Regressor mode: "additive" or "multiplicative"
@@ -107,9 +108,8 @@ loss_func = "Huber"               # "Huber" (robust to outliers), "MAE", or "MSE
 
 # AR-Net Architecture (Deep Learning Configuration)
 # Per docs: n_lags should be >= n_forecasts for effective AR
-n_lags = 288                       # 72 hours context (288 * 15min = 72h)
+n_lags = 192                       # 72 hours context (288 * 15min = 72h)
 n_forecasts = 96                  # Predict 24 hours at once (96 * 15min = 24h)
-ar_days = -1                      # Days to use AR (1=first day only, 0=disable, -1=always)
 
 # AR Hidden Layers
 # [] = Linear AR (simpler, often sufficient for PV)

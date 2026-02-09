@@ -108,13 +108,11 @@ These parameters enable multi-step forecasting with historical context:
 | :--- | :--- | :--- |
 | `n_lags` | `288` | 72 hours of history (288 × 15min). Per docs: should be `>= n_forecasts`. Larger context improves pattern recognition. |
 | `n_forecasts` | `96` | 24 hours ahead (96 × 15min). Generates all future values in one forward pass. |
-| `ar_days` | `-1` | Days to use AR: `1`=first day only, `0`=disable, `-1`=always use AR. |
 | `ar_layers` | `[]` | Linear AR model. Sufficient for PV; deep layers add complexity without accuracy gains. |
 | `ar_reg` | `0.5` | L2 regularization. Prevents overfitting; 0.5 is a balanced default from tuning. |
 
 **Why these values?**
 - **`n_lags=288` (72h context)**: More history helps the model learn patterns across multiple days. The rule `n_lags >= n_forecasts` ensures the AR-Net has enough context to predict a full forecast window.
-- **`ar_days=-1` (always use AR)**: Continuously uses recent production data for intraday correction. If you experience error accumulation on multi-day forecasts, set to `1` to limit AR to the first day only.
 - **`ar_layers=[]` (Linear)**: Our tuning showed linear AR matches deep AR accuracy for PV. Simpler = faster training, smaller model, less overfitting risk.
 - **`ar_reg=0.5`**: Moderate regularization prevents the model from over-relying on past values, balancing AR influence with weather regressors.
 
