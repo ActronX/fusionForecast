@@ -35,7 +35,8 @@ For manual installation details, please refer to [manual_installation.md](doc/ma
 For production use, Docker provides the easiest and most reliable deployment method. The setup includes:
 - **Zero-Manual-Config**: `settings.toml` is automatically generated and synchronized from your `.env`.
 - **Auto-Initialization**: InfluxDB is automatically set up with all required buckets.
-- **Persistent Data**: Models and logs are stored on the host.
+- **Persistent Data**: Models, logs, and Node-RED flows are stored on the host for persistence.
+- **Node-RED Integration**: Access the specialized solar control logic at `http://localhost:1880`.
 
 ### Quick Start
 
@@ -59,7 +60,6 @@ For production use, Docker provides the easiest and most reliable deployment met
 
 3. **Start Containers**:
    ```bash
-   cd docker
    docker-compose up -d
    ```
    
@@ -82,6 +82,15 @@ For production use, Docker provides the easiest and most reliable deployment met
    - Username: `admin` (or as defined in your setup)
    - Password: `password` (or as defined in your setup)
    - Organization: `fusionforecast`
+
+### msg.payload (Switch Signal)
+The node uses **Active Low** logic (or specific logic defined in your setup):
+* 0 = **ON** (Enable Consumer)
+* 1 = **OFF** (Disable Consumer)
+
+### Accessing Node-RED
+When running via Docker, you can access the interface at:
+👉 **[http://localhost:1880](http://localhost:1880)**
 
 
 ### Configuration via `.env`
@@ -157,4 +166,13 @@ It includes advanced protection features:
 * **Real-Time Forecast Correction:** Dynamically adjusts the forecast curve ("Damping Factor") based on the actual solar performance since sunrise. If the day is cloudier/sunnier than predicted, the future forecast is scaled accordingly.
 * **Battery Protection:** Hard cutoff when SoC is critically low.
 
-👉 **[Read the full Node-RED Documentation](node_red/README.md)**
+👉 **[Read the full Node-RED Logic Documentation](node_red/README.md)**
+
+### Integration & Deployment
+
+Node-RED is fully integrated into the Docker environment.
+*   **Access:** [http://localhost:1880](http://localhost:1880)
+*   **Credentials:** Managed securely via `flows_cred.json` and environment variables.
+*   **Persistence:** Flows are saved to `node_red/flows.json`.
+
+👉 **[Read the Node-RED Integration Guide](doc/nodered_integration.md)** for details on Docker setup, Git workflow, and troubleshooting.

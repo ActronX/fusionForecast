@@ -20,6 +20,7 @@ regressor_history = "weather_data" # Historical weather data
 regressor_future = "weather_data"  # Weather forecast data
 target_forecast = "forecast_results" # Prediction output destination
 live = "energy_meter"              # Real-time production for intraday correction (lagged regressor)
+batterie = "batterie"              # Battery data bucket
 
 [influxdb.measurements]
 # Measurement names for different data categories

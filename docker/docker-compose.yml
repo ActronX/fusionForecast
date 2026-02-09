@@ -30,17 +30,17 @@ services:
   fusionforecast:
     build:
       context: ..
-      dockerfile: docker/Dockerfile
+      dockerfile: docker/Dockerfile.fusionforecast
     container_name: fusionforecast-app
     restart: unless-stopped
     depends_on:
       influxdb:
         condition: service_healthy
     volumes:
-      - ../settings.toml:/app/settings.toml.template:ro
+      - ../settings.example.toml:/app/settings.toml.template:ro
       - ../logs:/app/logs
       - ../models:/app/models
-      # - ../measurements.csv:/app/measurements.csv # Uncomment to auto-import history
+      -  #../measurements.csv:/app/measurements.csv # Uncomment to auto-import history
       - influx-shared:/shared:ro
     environment:
       - INFLUXDB_URL=http://influxdb:8086
@@ -58,12 +58,34 @@ services:
     networks:
       - fusionforecast-network
 
+  nodered:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.nodered
+    container_name: fusionforecast-nodered
+    restart: unless-stopped
+    ports:
+      - "1880:1880"
+    environment:
+      - INFLUXDB_URL=http://influxdb:8086
+      - INFLUXDB_TOKEN=${INFLUXDB_TOKEN}
+      - INFLUXDB_ORG=${INFLUXDB_ORG:-fusionforecast}
+    volumes:
+      - ../node_red:/data
+    depends_on:
+      - influxdb
+      - fusionforecast
+    networks:
+      - fusionforecast-network
+
 volumes:
   influxdb-data:
     driver: local
   influxdb-config:
     driver: local
   influx-shared:
+    driver: local
+  nodered-data:
     driver: local
 
 networks:
