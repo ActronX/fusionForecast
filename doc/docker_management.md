@@ -7,8 +7,12 @@ This guide provides commands for managing the FusionForecast Docker container an
 All commands should be run from the project root (or `docker/` directory depending on your `docker-compose` context, usually root if using the provided makefile or scripts, but here we assume standard docker-compose usage).
 
 ```bash
-# View logs
-docker-compose logs -f [fusionforecast|influxdb]
+# View logs (all services)
+docker-compose logs -f
+
+# View logs (specific service)
+docker-compose logs -f fusionforecast
+docker-compose logs -f influxdb
 
 # Restart services
 docker-compose restart

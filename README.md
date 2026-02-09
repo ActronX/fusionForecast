@@ -47,7 +47,7 @@ For production use, Docker provides the easiest and most reliable deployment met
    ```
 
 2. **Prepare Data (Recommended)**:
-   - Place your historical data file as `measurements.csv` in the project root (one level up).
+   - Place your historical data file as `measurements.csv` in the project root (one level up). See the **[Data Import Guide](doc/import_data.md#1-importing-historical-data-required-for-training)** for CSV format details.
    - Edit `docker-compose.yml` (already in `docker/` folder) and uncomment the volume line:
      ```yaml
      volumes:
