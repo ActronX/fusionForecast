@@ -83,14 +83,10 @@ For production use, Docker provides the easiest and most reliable deployment met
    - Password: `password` (or as defined in your setup)
    - Organization: `fusionforecast`
 
-### msg.payload (Switch Signal)
-The node uses **Active Low** logic (or specific logic defined in your setup):
-* 0 = **ON** (Enable Consumer)
-* 1 = **OFF** (Disable Consumer)
 
-### Accessing Node-RED
-When running via Docker, you can access the interface at:
-👉 **[http://localhost:1880](http://localhost:1880)**
+6. **Access Node-RED**:
+   - URL: [http://localhost:1880](http://localhost:1880)
+   - Configuration: Use the Flow Editor to adjust logic or view status.
 
 
 ### Configuration via `.env`
