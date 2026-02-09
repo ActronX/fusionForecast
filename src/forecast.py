@@ -19,6 +19,7 @@ import pandas as pd
 import numpy as np
 import torch
 import neuralprophet
+import traceback
 
 # Add project root to path
 sys.path.append(os.getcwd())
@@ -66,8 +67,17 @@ def run_forecast():
         return
         
     print(f"Loading model from: {model_path}")
-    # Use NeuralProphet's native load function (safer than torch.load)
-    model = neuralprophet.load(model_path)
+    # PyTorch 2.6+ defaults to weights_only=True, which blocks loading full NeuralProphet objects.
+    # NeuralProphet's load() internally calls torch.load, so we monkey-patch it temporarily
+    # to force weights_only=False. This is safe since we trust locally generated model files.
+    import functools
+    original_torch_load = torch.load
+    torch.load = functools.partial(original_torch_load, weights_only=False)
+    try:
+        model = neuralprophet.load(model_path)
+    finally:
+        # Restore original torch.load
+        torch.load = original_torch_load
 
     # Extract model configuration
     n_lags = getattr(model, 'n_lags', 0)
@@ -204,6 +214,7 @@ def run_forecast():
                 
         except Exception as e:
             print(f"Error during prediction at step {i}: {e}")
+            traceback.print_exc()
             break
             
     if not predictions:
