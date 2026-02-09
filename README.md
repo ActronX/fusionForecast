@@ -12,7 +12,7 @@ FusionForecast is an ML-based tool for forecasting time series data (e.g., PV ge
 - **Data Source**: Reads training data (target value and regressor) from InfluxDB.
 - **Modeling**: Uses NeuralProphet (PyTorch) for time series forecasting.
 - **Intraday Correction**: Dual-mechanism approach for real-time forecast adjustments:
-  - **AR-Net** (`n_lags=96`): Learns autoregressive patterns from the last 24 hours of production to capture short-term trends.
+  - **AR-Net**: Learns autoregressive patterns from the last 24 hours of production to capture short-term trends.
   - **Intraday Correction**: The AR mechanism automatically uses recent live production data to adjust the forecast start point.
 - **Server-Side Aggregation**: Performs downsampling (e.g., to 1h means) directly in the database.
 - **Configurable**: All settings (buckets, measurements, offsets) are defined in `settings.toml`.
@@ -26,6 +26,9 @@ FusionForecast is an ML-based tool for forecasting time series data (e.g., PV ge
 - **Historical PV Data:** At least 30 days of historical generation data are required for training. Ideally, 1 to 2 years of data should be available for better accuracy.
     - **Frequency:** Data should preferably be stored every 15 to 60 minutes. It is not critical if individual data points are missing; the system is designed to handle gaps and inexact timestamps.
     - **Timezone:** The correct timezone must be observed. The system operates in UTC.
+
+## Manual Installation
+For manual installation details, please refer to [manual_installation.md](doc/manual_installation.md).
 
 ## Docker Deployment (Recommended)
 
@@ -134,10 +137,7 @@ For a detailed description of the scripts and data flow, please refer to the **[
 
 ### InfluxDB Login Guide for FusionForecast
 👉 **[Read the InfluxDB Documentation](doc/influxdb-login-guide.md)**
-![influx](doc/influx.jpg)
-
-## Manual Installation
-For manual installation details, please refer to [manual_installation.md](doc/manual_installation.md).
+<img src="doc/influx.jpg" width="50%">
 
 # Smart Consumer Control (Node-RED)
 
