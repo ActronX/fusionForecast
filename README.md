@@ -136,9 +136,10 @@ The container automatically:
 For a detailed description of the scripts and data flow, please refer to the **[Technical Overview](doc/technical_overview.md)**.
 
 ### InfluxDB Login Guide for FusionForecast
-👉 **[Read the InfluxDB Documentation](doc/influxdb-login-guide.md)**
+
 <img src="doc/influx.jpg" width="50%">
 
+👉 **[Read the InfluxDB Documentation](doc/influxdb-login-guide.md)**
 # Smart Consumer Control (Node-RED)
 
 For users who want to use the forecast data to control physical devices (e.g., heating, EV charging), I provide a ready-to-use **Node-RED** flow.
