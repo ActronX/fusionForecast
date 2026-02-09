@@ -41,18 +41,22 @@ live     = "production"              # Real-time power for lagged regressor | re
 regressor_history    = ["global_tilted_irradiance", "temperature_2m", "snow_depth", "wind_speed_10m"]           # Historic total irradiance (training) | refs: buckets.regressor_history & measurements.regressor_history
 regressor_future     = ["global_tilted_irradiance", "temperature_2m", "snow_depth", "wind_speed_10m"]           # Forecast total irradiance (prediction) | refs: buckets.regressor_future & measurements.regressor_future
 
+
 [weather.open_meteo.historic]
 # Historic Data Fetch Settings
-start_date = "2024-01-01" # Start date for training history (YYYY-MM-DD)
+start_date = "2023-12-01" # Start date for training history (YYYY-MM-DD)
 end_date = "today"        # End date for training history
 models = "best_match"      # Weather model selection
-minutely_15 = ["global_tilted_irradiance_instant", "diffuse_radiation", "direct_normal_irradiance"] # 15min resolution variable
+minutely_15 = ["diffuse_radiation", "direct_normal_irradiance"] # 15min resolution variables
+hourly = ["temperature_2m", "snow_depth", "wind_speed_10m"]
+
 
 [weather.open_meteo.forecast]
 # Future Forecast Fetch Settings
-forecast_days = 14                             # Number of days to predict
+forecast_days = 14                            # Number of days to predict
 models = "best_match"                          # Model selection
-minutely_15 = ["global_tilted_irradiance_instant", "diffuse_radiation", "direct_normal_irradiance"] # 15min resolution variable
+minutely_15 = ["diffuse_radiation", "direct_normal_irradiance"] # 15min resolution variables
+hourly = ["temperature_2m", "snow_depth", "wind_speed_10m"]
 
 [model]
 # Central model parameters and storage
