@@ -74,3 +74,12 @@ lightning_logs/
 *.html
 
 
+
+# Node-RED
+node_red/node_modules/
+node_red/.config.*
+node_red/.*.backup
+node_red/package.json
+node_red/package-lock.json
+node_red/settings.js
+node_red/flows_cred.json
