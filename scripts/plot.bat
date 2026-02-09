@@ -1,7 +1,6 @@
-@echo off
-cd /d "%~dp0"
+cd /d "%~dp0.."
 
-REM Activate venv if it exists
+:: Check for venv and activate
 if exist "venv\Scripts\activate.bat" (
     echo Activating venv...
     call venv\Scripts\activate.bat
@@ -9,6 +8,5 @@ if exist "venv\Scripts\activate.bat" (
     echo Warning: venv not found. Using system python.
 )
 
-set PYTHONPATH=%PYTHONPATH%;%CD%
-python test_connection.py
-pause
+echo Running Plotly Visualization...
+python -m src.plot_model

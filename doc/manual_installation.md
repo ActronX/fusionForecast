@@ -18,15 +18,15 @@
 
    **Linux/Mac:**
    ```bash
-   chmod +x install_deps.sh
-   ./install_deps.sh
+   chmod +x ../scripts/install_deps.sh
+   ../scripts/install_deps.sh
    ```
-   This script installs system dependencies, creates the venv, and necessary folders via `install_deps.sh`.
+   This script installs system dependencies, creates the venv, and necessary folders via `../scripts/install_deps.sh`.
 
-The logic of FusionForecast is controlled via the `settings.toml` file. This file follows a hierarchical structure to group related settings logically.
+The logic of FusionForecast is controlled via the `../settings.toml` file. This file follows a hierarchical structure to group related settings logically.
 
 > [!IMPORTANT]
-> **Initial Setup:** Rename `settings.example.toml` to `settings.toml` before your first run. The example file contains valid structure but requires your specific credentials and coordinates.
+> **Initial Setup:** Rename `../settings.example.toml` to `../settings.toml` before your first run. The example file contains valid structure but requires your specific credentials and coordinates.
 
 ### Detailed Configuration Guide
 
@@ -188,40 +188,40 @@ Tuning is now performed using `src/tune.py` with **Grid Search** to find optimal
 Before proceeding, you can verify the connection to your InfluxDB instance.
 
 **Start:**
-- Windows: `test_connection.bat`
-- Linux: `./test_connection.sh`
+- Windows: `..\scripts\test_connection.bat`
+- Linux: `../scripts/test_connection.sh`
 
 ### 2. Fetch Historical Weather Data
 
 Before training the model, you must fetch historical weather data for your location to train the regressor.
 
 **Start:**
-- Windows: `fetch_historic_weather.bat` or `python -m src.fetch_historic_weather`
-- Linux: `./fetch_historic_weather.sh` or `python3 -m src.fetch_historic_weather`
+- Windows: `..\scripts\fetch_historic_weather.bat` or `python -m src.fetch_historic_weather`
+- Linux: `../scripts/fetch_historic_weather.sh` or `python3 -m src.fetch_historic_weather`
 
 ### 3. Train Model
 
 The training script loads historical data, trains the NeuralProphet model, and saves it locally as a `.pkl` file.
 
 **Start:**
-- Windows: `train.bat` or `python -m src.train`
-- Linux: `./train.sh` or `python3 -m src.train`
+- Windows: `..\scripts\train.bat` or `python -m src.train`
+- Linux: `../scripts/train.sh` or `python3 -m src.train`
 
 ### 4. Fetch Future Weather Data
 
 Before creating a forecast, you must fetch the latest weather forecast from DWD/Open-Meteo. This data serves as the regressor for the prediction.
 
 **Start:**
-- Windows: `fetch_future_weather.bat` or `python -m src.fetch_future_weather`
-- Linux: `./fetch_future_weather.sh` or `python3 -m src.fetch_future_weather`
+- Windows: `..\scripts\fetch_future_weather.bat` or `python -m src.fetch_future_weather`
+- Linux: `../scripts/fetch_future_weather.sh` or `python3 -m src.fetch_future_weather`
 
 ### 5. Create Forecast
 
 The forecast script loads the saved model and future regressor data (e.g., weather forecast), calculates the forecast, and writes it to InfluxDB.
 
 **Start:**
-- Windows: `forecast.bat` or `python -m src.forecast`
-- Linux: `./forecast.sh` or `python3 -m src.forecast`
+- Windows: `..\scripts\forecast.bat` or `python -m src.forecast`
+- Linux: `../scripts/forecast.sh` or `python3 -m src.forecast`
 
 ### 6. Intraday Monitoring (Optional)
 
@@ -240,16 +240,16 @@ Executes the complete workflow in order:
 5. **Create Forecast**: Generates the forecast with intraday correction.
 
 **Start:**
-- Windows: `run_pipeline.bat`
-- Linux: `./run_pipeline.sh`
+- Windows: `..\scripts\run_pipeline.bat`
+- Linux: `../scripts/run_pipeline.sh`
 
 ### 8. Hyperparameter Tuning
 
 To optimize the model's accuracy, you can tune the hyperparameters (e.g., `ar_layers`, `ar_reg`, `seasonality_mode`) using **Grid Search**. Run `src/tune.py` and review `tuning_results.csv` for the best configuration.
 
 **Start:**
-- Windows: `tune.bat` or `python -m src.tune`
-- Linux: `./tune.sh` or `python3 -m src.tune`
+- Windows: `..\scripts\tune.bat` or `python -m src.tune`
+- Linux: `../scripts/tune.sh` or `python3 -m src.tune`
 
 #### Evaluation Metrics
 
@@ -269,31 +269,31 @@ The tuning script evaluates model performance using Cross-Validation and calcula
 
 ## Folder Structure
 
-- `src/`: Source code (Python scripts).
-- `models/`: Storage location for trained models (`prophet_model.pkl`).
-- `node_red/`: Node-RED flows and documentation for consumer control.
-- `settings.toml`: Configuration file.
-- `requirements.txt`: Python dependencies.
+- `../src/`: Source code (Python scripts).
+- `../models/`: Storage location for trained models (`prophet_model.pkl`).
+- `../node_red/`: Node-RED flows and documentation for consumer control.
+- `../settings.toml`: Configuration file.
+- `../requirements.txt`: Python dependencies.
 
 
 ## Script Overview
 
-Here is a detailed description of the Python scripts located in `src/`:
+Here is a detailed description of the Python scripts located in `../src/`:
 
 ### Core Pipeline
-- **`src/train.py`**: Trains the **Production** (PV) model. Fetches historical production and regressor data, configures Linear AR (`n_lags=96`, 24h context), trains NeuralProphet, and saves `prophet_model.pkl`.
-- **`src/forecast.py`**: Generates **Production** forecasts using multi-step prediction with **intraday correction**. Uses AR-Net for autoregressive patterns based on recent actual production. Predicts generation in 24-hour chunks and writes to InfluxDB.
+- **`../src/train.py`**: Trains the **Production** (PV) model. Fetches historical production and regressor data, configures Linear AR (`n_lags=96`, 24h context), trains NeuralProphet, and saves `prophet_model.pkl`.
+- **`../src/forecast.py`**: Generates **Production** forecasts using multi-step prediction with **intraday correction**. Uses AR-Net for autoregressive patterns based on recent actual production. Predicts generation in 24-hour chunks and writes to InfluxDB.
 
 ### Data Fetching & Calculations
-- **`src/fetch_future_weather.py`**: Fetches **current** weather forecasts from Open-Meteo. Uses `weather_utils.py` to calculate effective irradiance (GTI) and clearsky GHI.
-- **`src/fetch_historic_weather.py`**: Fetches **historical** weather data from Open-Meteo. Uses `weather_utils.py` to calculate effective irradiance (GTI) and clearsky GHI.
-- **`src/weather_utils.py`**: **Consolidated Physics Model**. Shared utility that handles `pvlib` calculations for solar position, plane of array (POA) irradiance, and clearsky GHI.
+- **`../src/fetch_future_weather.py`**: Fetches **current** weather forecasts from Open-Meteo. Uses `weather_utils.py` to calculate effective irradiance (GTI) and clearsky GHI.
+- **`../src/fetch_historic_weather.py`**: Fetches **historical** weather data from Open-Meteo. Uses `weather_utils.py` to calculate effective irradiance (GTI) and clearsky GHI.
+- **`../src/weather_utils.py`**: **Consolidated Physics Model**. Shared utility that handles `pvlib` calculations for solar position, plane of array (POA) irradiance, and clearsky GHI.
 
 ### Utilities & Maintenance
 
-- **`src/tune.py`**: Performs **Hyperparameter Tuning** using **Grid Search** to find the optimal NeuralProphet parameters (e.g., `ar_layers`, `ar_reg`, `seasonality_mode`) for your specific data.
+- **`../src/tune.py`**: Performs **Hyperparameter Tuning** using **Grid Search** to find the optimal NeuralProphet parameters (e.g., `ar_layers`, `ar_reg`, `seasonality_mode`) for your specific data.
 
-- **`src/plot_model.py`**: Generates interactive Plotly charts of the model components (trend, seasonality) for visual inspection.
+- **`../src/plot_model.py`**: Generates interactive Plotly charts of the model components (trend, seasonality) for visual inspection.
 
 
 ## InfluxDB Data Flow
@@ -301,7 +301,7 @@ Here is a detailed description of the Python scripts located in `src/`:
 This section describes which data is read from and written to InfluxDB, and why this is necessary.
 
 ### 1. Training (Model Creation)
-*Scripts: `src/train.py`*
+*Scripts: `../src/train.py`*
 
 - **Reads**:
     - **Production History** (`buckets.history_produced`): Actual historical PV generation data.
@@ -310,7 +310,7 @@ This section describes which data is read from and written to InfluxDB, and why 
   - **Linear AR-Net** (`n_lags=96`): Uses last 24 hours of target values to capture short-term autoregressive patterns.
 
 ### 2. Forecasting (Prediction)
-*Scripts: `src/forecast.py`*
+*Scripts: `../src/forecast.py`*
 
 - **Reads**:
     - **Future Regressor** (`buckets.regressor_future`): The current weather forecast for the next few days.
@@ -320,7 +320,7 @@ This section describes which data is read from and written to InfluxDB, and why 
 - **Why**: To make a prediction for tomorrow, the model needs to know the expected weather (Regressor). The result is then stored so it can be visualized in Grafana or used by an energy management system (e.g., to charge a battery).
 
 ### 3. Data Fetching (External Sources)
-*Scripts: `src/fetch_future_weather.py`, `src/fetch_historic_weather.py`*
+*Scripts: `../src/fetch_future_weather.py`, `../src/fetch_historic_weather.py`*
 
 - **Writes**:
     - **Historic Weather** (`buckets.regressor_history`): Stores historical weather data fetched from Open-Meteo.
@@ -341,17 +341,36 @@ Add the following lines (adjust `/path/to/fusionForecast` to your installation p
 
 ```cron
 # Fetch Future Weather Data (e.g. every 15 minutes at minute 1, 16, 31, 46)
-1,16,31,46 * * * * /path/to/fusionForecast/fetch_future_weather.sh >> /path/to/fusionForecast/logs/fetch_future_weather.log 2>&1
+1,16,31,46 * * * * /path/to/fusionForecast/scripts/fetch_future_weather.sh >> /path/to/fusionForecast/logs/fetch_future_weather.log 2>&1
 
 # Create a forecast every 15 minutes (e.g. at minute 2, 17, 32, 47)
-2,17,32,47 * * * * /path/to/fusionForecast/forecast.sh >> /path/to/fusionForecast/logs/forecast.log 2>&1
+2,17,32,47 * * * * /path/to/fusionForecast/scripts/forecast.sh >> /path/to/fusionForecast/logs/forecast.log 2>&1
 
 # Fetch historic weather data once a month (e.g., 1st of the month at 01:00 AM)
-0 1 1 * * /path/to/fusionForecast/fetch_historic_weather.sh >> /path/to/fusionForecast/logs/fetch_historic.log 2>&1
+0 1 1 * * /path/to/fusionForecast/scripts/fetch_historic_weather.sh >> /path/to/fusionForecast/logs/fetch_historic.log 2>&1
 
 # Train the model once a month (e.g., 1st of the month at 02:00 AM)
-0 2 1 * * /path/to/fusionForecast/train.sh >> /path/to/fusionForecast/logs/train.log 2>&1
+0 2 1 * * /path/to/fusionForecast/scripts/train.sh >> /path/to/fusionForecast/logs/train.log 2>&1
 ```
 
-Ensure the scripts are executable (`chmod +x *.sh`) and the path is absolute.
-Logs will be stored in the `logs/` directory (created automatically by `install_deps.sh`).
+ensure the scripts are executable (`chmod +x scripts/*.sh`) and the path is absolute.
+Logs will be stored in the `logs/` directory (created automatically by `scripts/install_deps.sh`).
+
+# Smart Consumer Control (Node-RED)
+
+For users who want to use the forecast data to control physical devices (e.g., heating, EV charging), I provide a ready-to-use **Node-RED** flow.
+
+![Wiring](../node_red/Wiring.jpg)
+
+`[Inject] --> [Template] --> [InfluxDB] --> [Function] --> [Output]`
+
+Instead of simple threshold switching, it calculates the **projected solar energy surplus** for the next 24 hours. It switches the consumer **ON** only if the surplus is sufficient to cover the runtime costs without draining the home battery below a reserved level.
+
+It includes advanced protection features:
+* **Hysteresis:** Prevents rapid toggling ("flip-flopping") by requiring a specific charge level recovery.
+* **Dynamic Reserve:** Maintains a high safety buffer when battery is low, but reduces it when battery is full to maximize capacity usage.
+* **Safety Guard:** Prevents operation if forecast data is incomplete or outdated.
+* **Real-Time Forecast Correction:** Dynamically adjusts the forecast curve ("Damping Factor") based on the actual solar performance since sunrise. If the day is cloudier/sunnier than predicted, the future forecast is scaled accordingly.
+* **Battery Protection:** Hard cutoff when SoC is critically low.
+
+👉 **[Read the full Node-RED Documentation](../node_red/README.md)**

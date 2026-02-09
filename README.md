@@ -4,7 +4,7 @@ FusionForecast is an ML-based tool for forecasting time series data (e.g., PV ge
 
 ## Data Flow
 
-![Dataflow Diagram](dataflow_diagram.png)
+![Dataflow Diagram](doc/dataflow_diagram.png)
 
 
 ## Features
@@ -39,7 +39,7 @@ For production use, Docker provides the easiest and most reliable deployment met
 1. **Clone Repository & Prepare Configuration**:
    ```bash
    git clone <repository-url>
-   cd fusionForecast
+   cd fusionForecast/docker
    
    # Copy and edit environment variables
    cp .env.example .env
@@ -47,8 +47,8 @@ For production use, Docker provides the easiest and most reliable deployment met
    ```
 
 2. **Prepare Data (Recommended)**:
-   - Place your historical data file as `measurements.csv` in the project root.
-   - Edit `docker/docker-compose.yml` and uncomment the volume line:
+   - Place your historical data file as `measurements.csv` in the project root (one level up).
+   - Edit `docker-compose.yml` (already in `docker/` folder) and uncomment the volume line:
      ```yaml
      volumes:
        - ../measurements.csv:/app/measurements.csv
@@ -56,8 +56,8 @@ For production use, Docker provides the easiest and most reliable deployment met
 
 3. **Start Containers**:
    ```bash
-   # Run from project root
-   docker-compose -f docker/docker-compose.yml up -d
+   cd docker
+   docker-compose up -d
    ```
    
    This will:
@@ -68,10 +68,10 @@ For production use, Docker provides the easiest and most reliable deployment met
 4. **Monitor Setup**:
    ```bash
    # Watch logs during initial setup
-   docker-compose -f docker/docker-compose.yml logs -f fusionforecast
+   docker-compose logs -f fusionforecast
    
    # Check container status
-   docker-compose -f docker/docker-compose.yml ps
+   docker-compose ps
    ```
 
 5. **Access InfluxDB Dashboard**:
@@ -136,7 +136,7 @@ The easiest way is to mount your CSV file into the container. It will be automat
     volumes:
       - ./measurements.csv:/app/measurements.csv
     ```
-3.  Start the container: `docker-compose up -d`
+3.  Start the container: `cd docker && docker-compose up -d`
 
 #### Option 2: Manual Copy & Import (Interactive)
 If you prefer to import data into a running container without restarting:
@@ -191,29 +191,29 @@ curl -X POST "http://localhost:8086/api/v2/write?org=fusionforecast&bucket=energ
 
 ```bash
 # View logs
-docker-compose -f docker/docker-compose.yml logs -f [fusionforecast|influxdb]
+docker-compose logs -f [fusionforecast|influxdb]
 
 # Restart services
-docker-compose -f docker/docker-compose.yml restart
+docker-compose restart
 
 # Stop all containers
-docker-compose -f docker/docker-compose.yml down
+docker-compose down
 
 # Stop and remove volumes (⚠️ deletes all InfluxDB data!)
-docker-compose -f docker/docker-compose.yml down -v
+docker-compose down -v
 
 # Rebuild and restart after code changes
-docker-compose -f docker/docker-compose.yml up -d --build
+docker-compose up -d --build
 
 # Open shell in container
 docker exec -it fusionforecast-app bash
 
 # Apply changes from .env (recreates container with new env vars, no rebuild needed)
-docker-compose -f docker/docker-compose.yml up -d
+docker-compose up -d
 
 # Force full rebuild (e.g. after code changes)
-docker-compose -f docker/docker-compose.yml build --no-cache fusionforecast
-docker-compose -f docker/docker-compose.yml up -d
+docker-compose build --no-cache fusionforecast
+docker-compose up -d
 ```
 
 ### Data Persistence
@@ -284,11 +284,11 @@ This section describes which data is read from and written to InfluxDB, and why 
 - **Why**: FusionForecast relies on external weather data (Irradiance) to make accurate PV predictions. This data must be actively fetched and stored in InfluxDB so the Training and Forecast scripts can access it.
 
 ### InfluxDB Login Guide for FusionForecast
-👉 **[Read the InfluxDB Documentation](influxdb-login-guide.md)**
-![influx](influx.jpg)
+👉 **[Read the InfluxDB Documentation](doc/influxdb-login-guide.md)**
+![influx](doc/influx.jpg)
 
 ## Manual Installation
-For manual installation details, please refer to [manual_installation.md](manual_installation.md).
+For manual installation details, please refer to [manual_installation.md](doc/manual_installation.md).
 
 # Smart Consumer Control (Node-RED)
 

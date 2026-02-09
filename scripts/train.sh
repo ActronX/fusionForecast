@@ -2,7 +2,7 @@
 set -e
 
 # Ensure we are in the script's directory
-cd "$(dirname "$0")"
+cd "$(dirname "$0")/.."
 
 # Activate venv
 if [ -d "venv" ]; then

@@ -1,6 +1,6 @@
 @echo off
 echo Starting FusionForecast Pipeline...
-cd /d "%~dp0"
+cd /d "%~dp0.."
 
 REM Activate venv if it exists
 if exist "venv\Scripts\activate.bat" (

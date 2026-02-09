@@ -1,6 +1,9 @@
 #!/bin/bash
 set -e
 
+cd "$(dirname "$0")/.."
+
+
 echo "Installing system dependencies..."
 # sudo apt-get update
 # Install python3, pip, and venv if not present. 

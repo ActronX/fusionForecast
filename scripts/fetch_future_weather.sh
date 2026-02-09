@@ -1,5 +1,5 @@
 #!/bin/bash
-cd "$(dirname "$0")"
+cd "$(dirname "$0")/.."
 
 # Activate venv if it exists
 if [ -f "venv/bin/activate" ]; then
@@ -9,8 +9,8 @@ else
     echo "Warning: venv not found. Using system python."
 fi
 
-echo "Running historic Regressor/Weather data fetcher..."
-python3 -m src.fetch_historic_weather
+echo "Running Regressor/Future Weather data updater..."
+python3 -m src.fetch_future_weather
 if [ $? -ne 0 ]; then
     echo "Execution failed with error code $?"
     exit $?
