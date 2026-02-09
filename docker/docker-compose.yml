@@ -29,18 +29,18 @@ services:
 
   fusionforecast:
     build:
-      context: .
-      dockerfile: Dockerfile
+      context: ..
+      dockerfile: docker/Dockerfile
     container_name: fusionforecast-app
     restart: unless-stopped
     depends_on:
       influxdb:
         condition: service_healthy
     volumes:
-      - ./settings.toml:/app/settings.toml.template:ro
-      - ./logs:/app/logs
-      - ./models:/app/models
-      # - ./measurements.csv:/app/measurements.csv # Uncomment to auto-import history
+      - ../settings.toml:/app/settings.toml.template:ro
+      - ../logs:/app/logs
+      - ../models:/app/models
+      # - ../measurements.csv:/app/measurements.csv # Uncomment to auto-import history
       - influx-shared:/shared:ro
     environment:
       - INFLUXDB_URL=http://influxdb:8086

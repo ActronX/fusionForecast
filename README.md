@@ -47,16 +47,17 @@ For production use, Docker provides the easiest and most reliable deployment met
    ```
 
 2. **Prepare Data (Recommended)**:
-   - Place your historical data file as `measurements.csv` in the folder.
-   - Edit `docker-compose.yml` and uncomment the volume line:
+   - Place your historical data file as `measurements.csv` in the project root.
+   - Edit `docker/docker-compose.yml` and uncomment the volume line:
      ```yaml
      volumes:
-       - ./measurements.csv:/app/measurements.csv
+       - ../measurements.csv:/app/measurements.csv
      ```
 
 3. **Start Containers**:
    ```bash
-   docker-compose up -d
+   # Run from project root
+   docker-compose -f docker/docker-compose.yml up -d
    ```
    
    This will:
@@ -67,10 +68,10 @@ For production use, Docker provides the easiest and most reliable deployment met
 4. **Monitor Setup**:
    ```bash
    # Watch logs during initial setup
-   docker-compose logs -f fusionforecast
+   docker-compose -f docker/docker-compose.yml logs -f fusionforecast
    
    # Check container status
-   docker-compose ps
+   docker-compose -f docker/docker-compose.yml ps
    ```
 
 5. **Access InfluxDB Dashboard**:
@@ -190,29 +191,29 @@ curl -X POST "http://localhost:8086/api/v2/write?org=fusionforecast&bucket=energ
 
 ```bash
 # View logs
-docker-compose logs -f [fusionforecast|influxdb]
+docker-compose -f docker/docker-compose.yml logs -f [fusionforecast|influxdb]
 
 # Restart services
-docker-compose restart
+docker-compose -f docker/docker-compose.yml restart
 
 # Stop all containers
-docker-compose down
+docker-compose -f docker/docker-compose.yml down
 
 # Stop and remove volumes (⚠️ deletes all InfluxDB data!)
-docker-compose down -v
+docker-compose -f docker/docker-compose.yml down -v
 
 # Rebuild and restart after code changes
-docker-compose up -d --build
+docker-compose -f docker/docker-compose.yml up -d --build
 
 # Open shell in container
 docker exec -it fusionforecast-app bash
 
 # Apply changes from .env (recreates container with new env vars, no rebuild needed)
-docker-compose up -d
+docker-compose -f docker/docker-compose.yml up -d
 
 # Force full rebuild (e.g. after code changes)
-docker-compose build --no-cache fusionforecast
-docker-compose up -d
+docker-compose -f docker/docker-compose.yml build --no-cache fusionforecast
+docker-compose -f docker/docker-compose.yml up -d
 ```
 
 ### Data Persistence

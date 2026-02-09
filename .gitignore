@@ -25,6 +25,9 @@ share/python-wheels/
 *.egg
 MANIFEST
 
+# Cache
+.cache.sqlite
+
 # Virtual Environment
 venv/
 env/
@@ -62,3 +65,11 @@ models/
 *.pkl
 *.html
 fusionForecast.spec
+
+# Lighting logs
+lightning_logs/
+
+# HTML reports
+*.html
+
+

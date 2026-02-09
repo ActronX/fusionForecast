@@ -41,8 +41,8 @@ COPY *.py .
 RUN mkdir -p /app/logs /app/models
 
 # Copy Docker-specific files first
-COPY docker-entrypoint.sh /docker-entrypoint.sh
-COPY docker-crontab /etc/cron.d/fusionforecast
+COPY docker/entrypoint.sh /docker-entrypoint.sh
+COPY docker/crontab /etc/cron.d/fusionforecast
 
 # Set permissions and install crontab
 RUN dos2unix /docker-entrypoint.sh && \
