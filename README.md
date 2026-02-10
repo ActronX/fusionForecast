@@ -42,7 +42,7 @@ For production use, Docker provides the easiest and most reliable deployment met
 
 1. **Clone Repository & Prepare Configuration**:
    ```bash
-   git clone <repository-url>
+   git clone https://github.com/ActronX/fusionForecast
    cd fusionForecast/docker
    
    # Copy and edit environment variables

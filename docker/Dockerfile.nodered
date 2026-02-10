@@ -6,6 +6,7 @@ RUN npm install node-red-contrib-influxdb
 # Custom entrypoint: injects credentialSecret from env var into settings.js
 COPY docker/nodered-entrypoint.sh /usr/src/node-red/nodered-entrypoint.sh
 USER root
+RUN apk add --no-cache dos2unix && dos2unix /usr/src/node-red/nodered-entrypoint.sh
 RUN chmod +x /usr/src/node-red/nodered-entrypoint.sh
 USER node-red
 
