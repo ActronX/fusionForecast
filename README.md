@@ -83,13 +83,15 @@ For production use, Docker provides the easiest and most reliable deployment met
    - Password: `your-secure-password-here` (or as defined in your setup)
    - Organization: `fusionforecast`
 
+   <img src="doc/influx.jpg" width="50%">
+
 
 6. **Access Node-RED**:
    - URL: [http://localhost:1880](http://localhost:1880)
    - Configuration: Use the Flow Editor to adjust logic or view status.
    - **Note**: When you first start, you might need to manually set the credentials (Influx Token) in the Node-RED UI.
 
-<img src="doc/node_red_credentials.jpg" width="50%">
+   <img src="doc/node_red_credentials.jpg" width="50%">
    
 
 
@@ -145,8 +147,6 @@ The container automatically:
 For a detailed description of the scripts and data flow, please refer to the **[Technical Overview](doc/technical_overview.md)**.
 
 ### InfluxDB Login Guide for FusionForecast
-
-<img src="doc/influx.jpg" width="50%">
 
 👉 **[Read the InfluxDB Documentation](doc/influxdb-login-guide.md)**
 # Smart Consumer Control (Node-RED)
