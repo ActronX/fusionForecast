@@ -20,16 +20,25 @@ if [ -n "$CREDENTIAL_SECRET" ] && [ -f "$SETTINGS_FILE" ]; then
     # Check if credentialSecret is already set (uncommented)
     if grep -q '^\s*credentialSecret:' "$SETTINGS_FILE"; then
         echo "Node-RED Entrypoint: Replacing existing credentialSecret"
-        # Replace existing value
-        sed -i "s|^\(\s*\)credentialSecret:.*|\\1credentialSecret: \"$CREDENTIAL_SECRET\",|" "$SETTINGS_FILE"
+        if [ "$CREDENTIAL_SECRET" = "false" ]; then
+             sed -i "s|^\(\s*\)credentialSecret:.*|\\1credentialSecret: false,|" "$SETTINGS_FILE"
+        else
+             sed -i "s|^\(\s*\)credentialSecret:.*|\\1credentialSecret: \"$CREDENTIAL_SECRET\",|" "$SETTINGS_FILE"
+        fi
     elif grep -q '//credentialSecret:' "$SETTINGS_FILE"; then
         echo "Node-RED Entrypoint: Uncommenting credentialSecret"
-        # Uncomment and set value
-        sed -i "s|^\(\s*\)//credentialSecret:.*|\\1credentialSecret: \"$CREDENTIAL_SECRET\",|" "$SETTINGS_FILE"
+        if [ "$CREDENTIAL_SECRET" = "false" ]; then
+             sed -i "s|^\(\s*\)//credentialSecret:.*|\\1credentialSecret: false,|" "$SETTINGS_FILE"
+        else
+             sed -i "s|^\(\s*\)//credentialSecret:.*|\\1credentialSecret: \"$CREDENTIAL_SECRET\",|" "$SETTINGS_FILE"
+        fi
     else
         echo "Node-RED Entrypoint: Appending credentialSecret"
-        # Insert after flowFile line
-        sed -i "/flowFile:/a\\    credentialSecret: \"$CREDENTIAL_SECRET\"," "$SETTINGS_FILE"
+        if [ "$CREDENTIAL_SECRET" = "false" ]; then
+             sed -i "/flowFile:/a\\    credentialSecret: false," "$SETTINGS_FILE"
+        else
+             sed -i "/flowFile:/a\\    credentialSecret: \"$CREDENTIAL_SECRET\"," "$SETTINGS_FILE"
+        fi
     fi
     echo "Node-RED: credentialSecret configured."
 else
