@@ -18,15 +18,9 @@
         "usetls": false,
         "tls": "",
         "influxdbVersion": "2.0",
-        "url": "http://influxdb:8086?token=ZjgzMjU3YTItMWEwZi00OTk5LWI1ZDktMDYzYzQwYTVjZTVhNWM4ZTAwM2EtMDQ5Ni00ZmYzLWE1N2ItODIwMWE5NWNjOGJk",
+        "url": "http://influxdb:8086",
         "timeout": "10",
-        "rejectUnauthorized": false,
-        "org": "fusionforecast",
-        "bucket": "default",
-        "credentials": {
-            "token": "ZjgzMjU3YTItMWEwZi00OTk5LWI1ZDktMDYzYzQwYTVjZTVhNWM4ZTAwM2EtMDQ5Ni00ZmYzLWE1N2ItODIwMWE5NWNjOGJk",
-            "password": "ZjgzMjU3YTItMWEwZi00OTk5LWI1ZDktMDYzYzQwYTVjZTVhNWM4ZTAwM2EtMDQ5Ni00ZmYzLWE1N2ItODIwMWE5NWNjOGJk"
-        }
+        "rejectUnauthorized": false
     },
     {
         "id": "4c335a0864f6c70c",
@@ -101,7 +95,7 @@
         "y": 180,
         "wires": [
             [
-                "fa967beb38589a04"
+                "6ab7663f443db754"
             ]
         ]
     },
@@ -162,10 +156,10 @@
         ]
     },
     {
-        "id": "fa967beb38589a04",
+        "id": "6ab7663f443db754",
         "type": "debug",
         "z": "12519283120209c6",
-        "name": "debug data",
+        "name": "debug 1",
         "active": true,
         "tosidebar": true,
         "console": false,
@@ -174,7 +168,7 @@
         "targetType": "full",
         "statusVal": "",
         "statusType": "auto",
-        "x": 1050,
+        "x": 1060,
         "y": 180,
         "wires": []
     }
