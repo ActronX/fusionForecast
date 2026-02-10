@@ -13,14 +13,20 @@
         "hostname": "influxdb",
         "port": "8086",
         "protocol": "http",
-        "database": "database",
+        "database": "default",
         "name": "InfluxDB Fusion",
         "usetls": false,
         "tls": "",
         "influxdbVersion": "2.0",
-        "url": "http://influxdb:8086",
+        "url": "http://influxdb:8086?token=ZjgzMjU3YTItMWEwZi00OTk5LWI1ZDktMDYzYzQwYTVjZTVhNWM4ZTAwM2EtMDQ5Ni00ZmYzLWE1N2ItODIwMWE5NWNjOGJk",
         "timeout": "10",
-        "rejectUnauthorized": false
+        "rejectUnauthorized": false,
+        "org": "fusionforecast",
+        "bucket": "default",
+        "credentials": {
+            "token": "ZjgzMjU3YTItMWEwZi00OTk5LWI1ZDktMDYzYzQwYTVjZTVhNWM4ZTAwM2EtMDQ5Ni00ZmYzLWE1N2ItODIwMWE5NWNjOGJk",
+            "password": "ZjgzMjU3YTItMWEwZi00OTk5LWI1ZDktMDYzYzQwYTVjZTVhNWM4ZTAwM2EtMDQ5Ni00ZmYzLWE1N2ItODIwMWE5NWNjOGJk"
+        }
     },
     {
         "id": "4c335a0864f6c70c",

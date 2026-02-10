@@ -70,7 +70,7 @@ services:
       - INFLUXDB_URL=http://influxdb:8086
       - INFLUXDB_TOKEN=${INFLUXDB_TOKEN}
       - INFLUXDB_ORG=${INFLUXDB_ORG:-fusionforecast}
-      - CREDENTIAL_SECRET=false
+      - CREDENTIAL_SECRET=${NODERED_CREDENTIAL_SECRET:-fusionForecastSecret}
 
     volumes:
       - ../node_red:/data

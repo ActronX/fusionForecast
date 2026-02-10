@@ -3,11 +3,11 @@ FROM nodered/node-red:latest
 # Install node-red-contrib-influxdb
 RUN npm install node-red-contrib-influxdb
 
-# Custom entrypoint: injects credentialSecret from env var into settings.js
-COPY docker/nodered-entrypoint.sh /usr/src/node-red/nodered-entrypoint.sh
-USER root
-RUN apk add --no-cache dos2unix && dos2unix /usr/src/node-red/nodered-entrypoint.sh
-RUN chmod +x /usr/src/node-red/nodered-entrypoint.sh
-USER node-red
+# Patch default settings.js to use process.env.CREDENTIAL_SECRET
+RUN sed -i 's#//credentialSecret: "a-secret-key",#credentialSecret: process.env.CREDENTIAL_SECRET || false,#' /usr/src/node-red/node_modules/node-red/settings.js
 
-ENTRYPOINT ["/usr/src/node-red/nodered-entrypoint.sh"]
+# Entrypoint: Inject Token into flows.json (if present) and start
+# We use a shell to run sed on the mounted volume before starting Node-RED
+ENTRYPOINT ["/bin/sh", "-c", "if [ -f /data/flows.json ]; then sed -i \"s|\\${INFLUXDB_TOKEN}|${INFLUXDB_TOKEN}|g\" /data/flows.json; fi && exec /usr/src/node-red/entrypoint.sh \"$@\""]
+
+
