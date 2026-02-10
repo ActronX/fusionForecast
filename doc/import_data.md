@@ -83,9 +83,64 @@ curl -X POST "http://localhost:8086/api/v2/write?org=fusionforecast&bucket=energ
   --data-raw "energy_meter production=1250.5"
 ```
 
-### Parameters for Curl
-- `bucket`: Target bucket (e.g., `energy_meter` for live, `energy_data` for history).
-- `--data-raw`: Format is `measurement field=value` (e.g., `energy_meter production=1200`).
+
+
+## 3. Pushing Battery SoC Data (Node-RED Consumer Control)
+
+If you are using the **Smart Consumer Control** feature with Node-RED, the system needs access to your battery's **State of Charge (SoC)** to make intelligent decisions about when to activate high-power consumers.
+
+### Why is this necessary?
+
+The Node-RED flow calculates the **projected solar energy surplus** for the next 24 hours and decides whether to switch on consumers (e.g., heating, EV charging) based on:
+- Current battery charge level
+- Forecasted solar production
+- Expected consumption
+
+Without real-time SoC data, the system cannot:
+- Prevent battery discharge below safe levels
+- Apply dynamic reserve strategies
+- Optimize energy usage based on available battery capacity
+
+### Battery Data Mapping
+
+**Mapping:**
+- **Bucket**: `batterie`
+- **Measurement**: `pv`
+- **Field**: `USOC` (User State of Charge, typically 0-100%)
+
+### Push Command
+
+If your battery management system or inverter can send HTTP requests, use the following curl command to push the current SoC:
+
+```bash
+curl -X POST "http://localhost:8086/api/v2/write?org=fusionforecast&bucket=batterie&precision=s" \
+  -H "Authorization: Token YOUR_TOKEN" \
+  --data-raw "pv USOC=75.5"
+```
+
+**Example with different SoC values:**
+
+```bash
+# Battery at 85% charge
+curl -X POST "http://localhost:8086/api/v2/write?org=fusionforecast&bucket=batterie" \
+  -H "Authorization: Token YOUR_TOKEN" \
+  --data-raw "pv USOC=85.0"
+
+# Battery at 45% charge
+curl -X POST "http://localhost:8086/api/v2/write?org=fusionforecast&bucket=batterie" \
+  -H "Authorization: Token YOUR_TOKEN" \
+  --data-raw "pv USOC=45.0"
+```
+
+> [!NOTE]
+> The Node-RED flow queries the last SoC value within the past hour. If no data is found, it falls back to 0% (safe mode). For optimal operation, push SoC data every 1-5 minutes.
+
+---
+
+### General Parameters for Curl Commands
+
+- `bucket`: Target bucket (e.g., `energy_meter` for live production, `energy_data` for history, `batterie` for battery data).
+- `--data-raw`: Format is `measurement field=value` (e.g., `energy_meter production=1200` or `pv USOC=75.5`).
 - `precision=s`: Uses the current server time for the data point.
 
 > [!TIP]
