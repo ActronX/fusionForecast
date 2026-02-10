@@ -114,7 +114,7 @@ The Docker setup uses environment variables to configure both InfluxDB and the a
    👉 **[Read the Node-RED Integration Guide](doc/nodered_integration.md)** for details
  
 
-### Importing Historical PV Data
+### Importing Historical and Live PV Data
 
 To train the model, you must push historical data into InfluxDB.
 
@@ -122,6 +122,7 @@ To train the model, you must push historical data into InfluxDB.
 - CSV Import (Volume or Manual)
 - Manual Injection via Curl
 - Pushing Live Data for Intraday Correction
+- Battery SoC for Smart Consumer Control 
 
 ### Data Persistence
 
