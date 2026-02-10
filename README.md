@@ -88,7 +88,8 @@ For production use, Docker provides the easiest and most reliable deployment met
    - URL: [http://localhost:1880](http://localhost:1880)
    - Configuration: Use the Flow Editor to adjust logic or view status.
    - **Note**: When you first start, you might need to manually set the credentials (Influx Token) in the Node-RED UI.
-
+   
+<img src="doc/node_red_credentials.jpg" width="50%">
    
 
 
