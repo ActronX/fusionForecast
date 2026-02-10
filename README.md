@@ -80,7 +80,7 @@ For production use, Docker provides the easiest and most reliable deployment met
 5. **Access InfluxDB Dashboard**:
    - URL: [http://localhost:8086](http://localhost:8086)
    - Username: `admin` (or as defined in your setup)
-   - Password: `password` (or as defined in your setup)
+   - Password: `your-secure-password-here` (or as defined in your setup)
    - Organization: `fusionforecast`
 
 
@@ -88,7 +88,7 @@ For production use, Docker provides the easiest and most reliable deployment met
    - URL: [http://localhost:1880](http://localhost:1880)
    - Configuration: Use the Flow Editor to adjust logic or view status.
    - **Note**: When you first start, you might need to manually set the credentials (Influx Token) in the Node-RED UI.
-   
+
 <img src="doc/node_red_credentials.jpg" width="50%">
    
 
