@@ -38,6 +38,23 @@ For production use, Docker provides the easiest and most reliable deployment met
 - **Persistent Data**: Models, logs, and Node-RED flows are stored on the host for persistence.
 - **Node-RED Integration**: Access the specialized solar control logic at `http://localhost:1880`.
 
+### Configuration via `.env`
+
+The Docker setup uses environment variables to configure both InfluxDB and the application.
+
+| Variable | Description | Default |
+| :--- | :--- | :--- |
+| `INFLUXDB_TOKEN` | API Token for InfluxDB access. | (Predefined) |
+| `INFLUXDB_ORG` | Organization name in InfluxDB. | `fusionforecast` |
+| `STATION_LATITUDE` | Decimal latitude of your location. | `52.5200` |
+| `STATION_LONGITUDE` | Decimal longitude of your location. | `13.4050` |
+| `STATION_TILT` | Tilt (0=flat, 90=vertical). | `30` |
+| `STATION_AZIMUTH` | Azimuth (0=South, -90=East, 90=West). | `0` |
+| `STATION_ALTITUDE` | Station altitude in meters. | `0` |
+| `MODEL_TRAINING_DAYS`| Days of history to use for training. | `30` |
+| `MAX_POWER_CLIP` | Max system output in Watts (outlier clipping).| `6000` |
+
+
 ### Quick Start
 
 1. **Clone Repository & Prepare Configuration**:
@@ -85,6 +102,7 @@ For production use, Docker provides the easiest and most reliable deployment met
 
    <img src="doc/influx.jpg" width="50%">
 
+   👉 **[Read the InfluxDB Documentation](doc/influxdb-login-guide.md)**
 
 6. **Access Node-RED**:
    - URL: [http://localhost:1880](http://localhost:1880)
@@ -92,25 +110,9 @@ For production use, Docker provides the easiest and most reliable deployment met
    - **Note**: When you first start, you might need to manually set the credentials (Influx Token) in the Node-RED UI.
 
    <img src="doc/node_red_credentials.jpg" width="50%">
-   
 
-
-### Configuration via `.env`
-
-The Docker setup uses environment variables to configure both InfluxDB and the application.
-
-| Variable | Description | Default |
-| :--- | :--- | :--- |
-| `INFLUXDB_TOKEN` | API Token for InfluxDB access. | (Predefined) |
-| `INFLUXDB_ORG` | Organization name in InfluxDB. | `fusionforecast` |
-| `STATION_LATITUDE` | Decimal latitude of your location. | `52.5200` |
-| `STATION_LONGITUDE` | Decimal longitude of your location. | `13.4050` |
-| `STATION_TILT` | Tilt (0=flat, 90=vertical). | `30` |
-| `STATION_AZIMUTH` | Azimuth (0=South, -90=East, 90=West). | `0` |
-| `STATION_ALTITUDE` | Station altitude in meters. | `0` |
-| `MODEL_TRAINING_DAYS`| Days of history to use for training. | `30` |
-| `MAX_POWER_CLIP` | Max system output in Watts (outlier clipping).| `6000` |
-
+   👉 **[Read the Node-RED Integration Guide](doc/nodered_integration.md)** for details
+ 
 
 ### Importing Historical PV Data
 
@@ -121,19 +123,19 @@ To train the model, you must push historical data into InfluxDB.
 - Manual Injection via Curl
 - Pushing Live Data for Intraday Correction
 
-### Container Management & Manual Execution
-
-👉 **[Read the full Docker Management Guide](doc/docker_management.md)** for details on:
-- Starting/Stopping/Restarting containers
-- Viewing Logs
-- **Manually triggering scripts** (Train, Forecast, Fetch Weather) inside the container
-
 ### Data Persistence
 
 Docker volumes ensure your data survives container restarts:
 - **influxdb-data**: All InfluxDB measurements and forecasts.
 - **./models**: Trained NeuralProphet models (mounted from host).
 - **./logs**: Application logs (mounted from host).
+
+### Container Management & Manual Execution
+
+👉 **[Read the full Docker Management Guide](doc/docker_management.md)** for details on:
+- Starting/Stopping/Restarting containers
+- Viewing Logs
+- **Manually triggering scripts** (Train, Forecast, Fetch Weather) inside the container
 
 ### Automated Updates
 
@@ -146,9 +148,6 @@ The container automatically:
 
 For a detailed description of the scripts and data flow, please refer to the **[Technical Overview](doc/technical_overview.md)**.
 
-### InfluxDB Login Guide for FusionForecast
-
-👉 **[Read the InfluxDB Documentation](doc/influxdb-login-guide.md)**
 # Smart Consumer Control (Node-RED)
 
 For users who want to use the forecast data to control physical devices (e.g., heating, EV charging), I provide a ready-to-use **Node-RED** flow.
@@ -168,11 +167,5 @@ It includes advanced protection features:
 
 👉 **[Read the full Node-RED Logic Documentation](node_red/README.md)**
 
-### Integration & Deployment
 
-Node-RED is fully integrated into the Docker environment.
-*   **Access:** [http://localhost:1880](http://localhost:1880)
-*   **Credentials:** Managed securely via `flows_cred.json` and environment variables.
-*   **Persistence:** Flows are saved to `node_red/flows.json`.
 
-👉 **[Read the Node-RED Integration Guide](doc/nodered_integration.md)** for details on Docker setup, Git workflow, and troubleshooting.
