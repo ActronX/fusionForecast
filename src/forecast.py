@@ -139,6 +139,14 @@ def run_forecast():
     # NeuralProphet (with n_forecasts < horizon) predicts in chunks.
     # For multi-step AR, we must feed the PREDICTIONS of step t as the HISTORY for step t+1.
     
+    # Diagnostic: check history data quality
+    if not df_history_final.empty:
+        nan_pct = df_history_final['y'].isna().mean() * 100
+        valid_count = df_history_final['y'].notna().sum()
+        print(f"  > History quality: {len(df_history_final)} rows, {valid_count} valid, {nan_pct:.1f}% NaN in y")
+        if nan_pct == 100:
+            print("  > Warning: All history y-values are NaN. Predictions will use zero-filled context.")
+    
     print(f"Starting recursive forecasting for {len(df_future_final)} periods...")
     
     # Initialize history with real data

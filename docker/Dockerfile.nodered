@@ -2,3 +2,11 @@ FROM nodered/node-red:latest
 
 # Install node-red-contrib-influxdb
 RUN npm install node-red-contrib-influxdb
+
+# Custom entrypoint: injects credentialSecret from env var into settings.js
+COPY docker/nodered-entrypoint.sh /usr/src/node-red/nodered-entrypoint.sh
+USER root
+RUN chmod +x /usr/src/node-red/nodered-entrypoint.sh
+USER node-red
+
+ENTRYPOINT ["/usr/src/node-red/nodered-entrypoint.sh"]

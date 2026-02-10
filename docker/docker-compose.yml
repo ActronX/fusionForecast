@@ -40,7 +40,7 @@ services:
       - ../settings.example.toml:/app/settings.toml.template:ro
       - ../logs:/app/logs
       - ../models:/app/models
-      -  #../measurements.csv:/app/measurements.csv # Uncomment to auto-import history
+      - ../measurements.csv:/app/measurements.csv # Uncomment to auto-import history
       - influx-shared:/shared:ro
     environment:
       - INFLUXDB_URL=http://influxdb:8086
@@ -70,6 +70,7 @@ services:
       - INFLUXDB_URL=http://influxdb:8086
       - INFLUXDB_TOKEN=${INFLUXDB_TOKEN}
       - INFLUXDB_ORG=${INFLUXDB_ORG:-fusionforecast}
+      - CREDENTIAL_SECRET=${CREDENTIAL_SECRET:-fdebf0a16d8dec2216ff84b76b67af6f37fbbf8b9cfe3e2ef6ac6b227fdd223a}
     volumes:
       - ../node_red:/data
     depends_on:

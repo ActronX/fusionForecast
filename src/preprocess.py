@@ -258,4 +258,16 @@ def prepare_forecast_input(model, chunk, current_history, n_lags, n_forecasts, r
     step_input = step_input.drop_duplicates(subset='ds', keep='last')
     step_input['y'] = pd.to_numeric(step_input['y'], errors='coerce')
     
+    # NeuralProphet drops rows with NaN y-values internally when building the DataLoader.
+    # If the entire history portion is NaN (e.g. production data unavailable), this produces
+    # an empty DataLoader and _predict_raw returns None → crash.
+    # Fix: fill NaN y-values in the history portion (first n_lags rows) with interpolation or 0.0.
+    history_end = min(n_lags, len(step_input))
+    history_y = step_input['y'].iloc[:history_end]
+    if history_y.isna().any():
+        # Try interpolation first, then fill remaining with 0.0
+        step_input['y'].iloc[:history_end] = (
+            history_y.interpolate(method='linear', limit_direction='both').fillna(0.0)
+        )
+    
     return step_input, chunk_padded, actual_len
