@@ -1,0 +1,27 @@
+{
+    "name": "node-red-contrib-solar-consumer",
+    "version": "1.0.0",
+    "description": "Smart Solar Consumer – Intelligent load switching based on battery SoC, solar forecast, and energy surplus calculation with damping factor support.",
+    "keywords": [
+        "node-red",
+        "solar",
+        "pv",
+        "battery",
+        "consumer",
+        "energy",
+        "forecast",
+        "soc",
+        "smart-home"
+    ],
+    "license": "MIT",
+    "node-red": {
+        "version": ">=2.0.0",
+        "nodes": {
+            "solar-consumer": "solar-consumer.js"
+        }
+    },
+    "author": "fusionForecast",
+    "engines": {
+        "node": ">=14.0.0"
+    }
+}

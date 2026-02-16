@@ -225,6 +225,7 @@ def prepare_forecast_input(model, chunk, current_history, n_lags, n_forecasts, r
     
     # Pad chunk if it's shorter than n_forecasts (to avoid 'negative dimensions' or shape mismatch in NP)
     if actual_len < n_forecasts:
+        print(f"  > Warning: Regressor chunk length ({actual_len}) < n_forecasts ({n_forecasts}). Padding with last value.")
         padding_len = n_forecasts - actual_len
         last_row = chunk.iloc[-1].copy()
         
@@ -265,6 +266,8 @@ def prepare_forecast_input(model, chunk, current_history, n_lags, n_forecasts, r
     history_end = min(n_lags, len(step_input))
     history_y = step_input['y'].iloc[:history_end]
     if history_y.isna().any():
+        nan_count = history_y.isna().sum()
+        print(f"  > Warning: Found {nan_count} NaN values in AR history context. Interpolating...")
         # Try interpolation first, then fill remaining with 0.0
         step_input['y'].iloc[:history_end] = (
             history_y.interpolate(method='linear', limit_direction='both').fillna(0.0)
