@@ -77,7 +77,7 @@ def run_tuning():
         
         # AR-Net Architecture
         # [] = linear model, [64] = single hidden layer with 64 neurons
-        'ar_layers': [[], [64],[32,32,32,32]],
+        'ar_layers': [[]],
         
         # AR Regularization (Sparsity)
         # From docs: 0.1 = light sparsity, 1.0 = moderate, 10 = extreme (unstable)

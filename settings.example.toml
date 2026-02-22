@@ -70,6 +70,8 @@ hourly = ["temperature_2m", "snow_depth", "wind_speed_10m"]
 path = "models/prophet_model.pkl" # File path to save/load trained model
 training_days = 30               # Days of data to use for training
 forecast_days = 14                # Prediction horizon in days
+export_training_csv = ""          # Export training data to CSV ("" to disable, e.g. "exports/training_data.csv")
+export_forecast_csv = ""          # Export forecast input data to CSV ("" to disable)
 
 [model.preprocessing]
 # Data cleaning, scaling and alignment

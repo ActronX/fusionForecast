@@ -49,6 +49,13 @@ def train_model():
         print(f"  - {name}")
     print("---------------------------------------------------")
 
+    # Optional: Export training data to CSV
+    export_path = settings['model'].get('export_training_csv', '')
+    if export_path:
+        os.makedirs(os.path.dirname(export_path) or '.', exist_ok=True)
+        df_prophet.to_csv(export_path, index=False)
+        print(f"Training data exported to {export_path} ({len(df_prophet)} rows, {len(df_prophet.columns)} columns)")
+
     # Validate data sufficiency
     training_days = settings['model']['training_days']
     if not validate_data_sufficiency(df_prophet, training_days):

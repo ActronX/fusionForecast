@@ -147,6 +147,21 @@ def run_forecast():
         if nan_pct == 100:
             print("  > Warning: All history y-values are NaN. Predictions will use zero-filled context.")
     
+    # Optional: Export forecast input data to CSV
+    export_path = settings['model'].get('export_forecast_csv', '')
+    if export_path:
+        export_dir = os.path.dirname(export_path) or '.'
+        os.makedirs(export_dir, exist_ok=True)
+        # Export future regressors
+        df_future_final.to_csv(export_path, index=False)
+        print(f"Future regressors exported to {export_path} ({len(df_future_final)} rows)")
+        # Export history context if available
+        if not df_history_final.empty:
+            base, ext = os.path.splitext(export_path)
+            history_path = f"{base}_history{ext}"
+            df_history_final.to_csv(history_path, index=False)
+            print(f"History context exported to {history_path} ({len(df_history_final)} rows)")
+
     print(f"Starting recursive forecasting for {len(df_future_final)} periods...")
     
     # Initialize history with real data
