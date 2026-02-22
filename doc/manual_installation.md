@@ -21,7 +21,7 @@
    chmod +x ../scripts/install_deps.sh
    ../scripts/install_deps.sh
    ```
-   This script installs system dependencies, creates the venv, and necessary folders via `../scripts/install_deps.sh`.
+   This script automatically installs Python 3.11 via `deadsnakes` PPA if needed, creates the venv, and installs all dependencies.
 
 The logic of FusionForecast is controlled via the `../settings.toml` file. This file follows a hierarchical structure to group related settings logically.
 
@@ -49,6 +49,7 @@ Centralized mapping for where data is stored and retrieved.
 - **Buckets**:
     - `history_produced`: Where your actual PV meters store past production.
     - `regressor_history` / `regressor_future`: Storage for weather data (training vs. prediction).
+    - `regressor_history_2` / `regressor_future_2`: Optional 2nd regressor source. Set to `""` to disable.
     - `target_forecast`: Where prediction results and nowcasts are written.
     - `live`: Real-time power data used for damping factor calculation.
 - **Measurements**:
@@ -59,6 +60,7 @@ Individual field names within the measurements. **Every field is cross-reference
 - `produced`: The field name for actual power/energy (e.g., `generatedWh`).
 - `forecast`: The target field for prediction output.
 - `regressor_history` / `regressor_future`: The primary irradiance field (GHI).
+- `regressor_history_2` / `regressor_future_2`: Optional 2nd regressor fields. Set to `[""]` to disable.
 
 
 #### 5. Weather Source `[weather.open_meteo]`
@@ -306,6 +308,7 @@ This section describes which data is read from and written to InfluxDB, and why 
 - **Reads**:
     - **Production History** (`buckets.history_produced`): Actual historical PV generation data.
     - **Regressor History** (`buckets.regressor_history`): Historical weather data (e.g., solar irradiance) corresponding to the production history.
+    - **2nd Regressor History** (`buckets.regressor_history_2`, optional): Additional regressor source. Disabled if set to `""`.
 - **Why**: The NeuralProphet model needs to learn the relationship between the target variable (Production) and time/weather. The model uses:
   - **Linear AR-Net** (`n_lags=96`): Uses last 24 hours of target values to capture short-term autoregressive patterns.
 
@@ -314,6 +317,7 @@ This section describes which data is read from and written to InfluxDB, and why 
 
 - **Reads**:
     - **Future Regressor** (`buckets.regressor_future`): The current weather forecast for the next few days.
+    - **2nd Future Regressor** (`buckets.regressor_future_2`, optional): Additional forecast source. Disabled if set to `""`.
     - **Historical Context** (`buckets.live` or `buckets.history_produced`): Recent production data (last 24 hours) when AR mode is enabled.
 - **Writes**:
     - **Target Forecast** (`buckets.target_forecast`): The predicted values for production.
