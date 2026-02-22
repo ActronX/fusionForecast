@@ -259,6 +259,10 @@ def prepare_forecast_input(model, chunk, current_history, n_lags, n_forecasts, r
     step_input = step_input.drop_duplicates(subset='ds', keep='last')
     step_input['y'] = pd.to_numeric(step_input['y'], errors='coerce')
     
+    # Ensure ALL regressor columns are filled (history portion may have NaN
+    # from outer-join merges, e.g. when secondary regressor coverage differs)
+    step_input = interpolate_regressors(step_input, regressor_names)
+    
     # NeuralProphet drops rows with NaN y-values internally when building the DataLoader.
     # If the entire history portion is NaN (e.g. production data unavailable), this produces
     # an empty DataLoader and _predict_raw returns None → crash.

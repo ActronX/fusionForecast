@@ -18,6 +18,8 @@ org = "your_org"              # Organization name
 history_produced = "energy_data"   # Past PV generation data
 regressor_history = "weather_data" # Historical weather data
 regressor_future = "weather_data"  # Weather forecast data
+regressor_history_2 = ""           # 2nd regressor source (historic) | "" to disable
+regressor_future_2  = ""           # 2nd regressor source (future)  | "" to disable
 target_forecast = "forecast_results" # Prediction output destination
 live = "energy_meter"              # Real-time production for intraday correction (lagged regressor)
 batterie = "batterie"              # Battery data bucket
@@ -27,6 +29,8 @@ batterie = "batterie"              # Battery data bucket
 produced          = "energy_meter"        # Source for actual PV production | ref: buckets.history_produced
 regressor_history = "weather"             # Source for historic weather | ref: buckets.regressor_history
 regressor_future  = "weather"             # Source for weather forecasts | ref: buckets.regressor_future
+regressor_history_2 = ""                  # 2nd source measurement | ref: buckets.regressor_history_2
+regressor_future_2  = ""                  # 2nd source measurement | ref: buckets.regressor_future_2
 forecast          = "production_forecast" # Output for model predictions | ref: buckets.target_forecast
 live              = "energy_meter"        # Real-time data source | ref: buckets.live
 
@@ -41,6 +45,8 @@ live     = "production"              # Real-time power for lagged regressor | re
 # Weather/Regressor fields (Source: buckets.regressor_history/future | measurements.regressor_history/future)
 regressor_history    = ["global_tilted_irradiance", "temperature_2m", "snow_depth", "wind_speed_10m"]           # Historic total irradiance (training) | refs: buckets.regressor_history & measurements.regressor_history
 regressor_future     = ["global_tilted_irradiance", "temperature_2m", "snow_depth", "wind_speed_10m"]           # Forecast total irradiance (prediction) | refs: buckets.regressor_future & measurements.regressor_future
+regressor_history_2  = []                                                                                      # 2nd source fields (historic) | refs: buckets.regressor_history_2
+regressor_future_2   = []                                                                                      # 2nd source fields (future)  | refs: buckets.regressor_future_2
 
 
 [weather.open_meteo.historic]

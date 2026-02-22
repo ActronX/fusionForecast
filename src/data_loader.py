@@ -30,9 +30,23 @@ REGRESSOR_OFFSET = PREPROCESSING.get('regressor_offset', '0m')
 # Model Configuration
 TRAINING_DAYS = settings['model']['training_days']
 
-# Regressor Fields
+# Regressor Fields (Primary)
 REG_CONFIG = FIELDS['regressor_history']
 REGRESSOR_FIELDS = REG_CONFIG if isinstance(REG_CONFIG, list) else [REG_CONFIG]
+
+# Regressor Fields (Secondary / optional)
+# If bucket is empty string, this source is disabled entirely.
+_BUCKET_2 = BUCKETS.get('regressor_history_2', '')
+HAS_REGRESSOR_2 = bool(_BUCKET_2)  # "" -> False, "home" -> True
+
+if HAS_REGRESSOR_2:
+    REG_CONFIG_2 = FIELDS.get('regressor_history_2', [])
+    REGRESSOR_FIELDS_2 = REG_CONFIG_2 if isinstance(REG_CONFIG_2, list) else [REG_CONFIG_2]
+else:
+    REGRESSOR_FIELDS_2 = []
+
+# Combined list used by train / forecast
+ALL_REGRESSOR_FIELDS = REGRESSOR_FIELDS + REGRESSOR_FIELDS_2
 
 
 # ============================================================================
@@ -237,11 +251,39 @@ def fetch_training_data(verbose=True):
     if df_prophet.empty:
         print("Error: Training data empty after merging. Check time alignment.")
         return None
+
+    # 3. Fetch Second Regressor Source (optional)
+    if HAS_REGRESSOR_2:
+        if verbose:
+            print(f"  - Fetching {len(REGRESSOR_FIELDS_2)} regressors from 2nd source...")
+        
+        query_reg2 = _build_flux_query(
+            bucket=BUCKETS['regressor_history_2'],
+            measurement=MEASUREMENTS['regressor_history_2'],
+            fields=REGRESSOR_FIELDS_2,
+            range_start=range_start,
+            scale=REGRESSOR_SCALE,
+            offset=REGRESSOR_OFFSET,
+            verbose=verbose
+        )
+        
+        df_reg2 = db.query_dataframe(query_reg2)
+        
+        if df_reg2.empty:
+            print("Warning: No data from 2nd regressor source. Continuing without it.")
+        else:
+            df_reg2 = prepare_prophet_dataframe(df_reg2, freq='15min')
+            cols_to_keep_2 = ['ds'] + [c for c in df_reg2.columns if c in REGRESSOR_FIELDS_2]
+            df_reg2 = df_reg2[cols_to_keep_2]
+            df_prophet = pd.merge(df_prophet, df_reg2, on='ds', how='inner')
+    
+    # Fill NaN in regressor columns (from sampling mismatches, e.g. 30min→15min)
+    df_prophet = interpolate_regressors(df_prophet, ALL_REGRESSOR_FIELDS)
     
     if verbose:
         print(f"  [OK] Loaded {len(df_prophet)} samples successfully")
     
-    return df_prophet, REGRESSOR_FIELDS
+    return df_prophet, ALL_REGRESSOR_FIELDS
 
 
 def validate_data_sufficiency(df, required_days, tolerance=0.9):
@@ -318,11 +360,11 @@ def fetch_intraday_data(db, fetch_hours, regressor_fields):
     df_hist = preprocess_data(df_target, value_column=target_field, is_prophet_input=True)
     df_hist = prepare_prophet_dataframe(df_hist, freq='15min')
     
-    # Fetch regressors (with interpolation)
+    # Fetch primary regressors (with interpolation)
     query_regressors = _build_flux_query(
         bucket=BUCKETS['regressor_history'],
         measurement=MEASUREMENTS['regressor_history'],
-        fields=regressor_fields,
+        fields=REGRESSOR_FIELDS,
         range_start=f'date.sub(d: {int(fetch_hours)}h, from: now())',
         range_stop='now()',
         scale=REGRESSOR_SCALE,
@@ -332,8 +374,26 @@ def fetch_intraday_data(db, fetch_hours, regressor_fields):
     df_regressors = db.query_dataframe(query_regressors)
     
     if not df_regressors.empty:
-        df_regressors = preprocess_regressors(df_regressors, regressor_fields, freq='15min')
+        df_regressors = preprocess_regressors(df_regressors, REGRESSOR_FIELDS, freq='15min')
         df_hist = pd.merge(df_hist, df_regressors, on='ds', how='outer')
+    
+    # Fetch 2nd regressor source (optional)
+    if HAS_REGRESSOR_2:
+        query_reg2 = _build_flux_query(
+            bucket=BUCKETS['regressor_history_2'],
+            measurement=MEASUREMENTS['regressor_history_2'],
+            fields=REGRESSOR_FIELDS_2,
+            range_start=f'date.sub(d: {int(fetch_hours)}h, from: now())',
+            range_stop='now()',
+            scale=REGRESSOR_SCALE,
+            interpolate=True
+        )
+        
+        df_reg2 = db.query_dataframe(query_reg2)
+        
+        if not df_reg2.empty:
+            df_reg2 = preprocess_regressors(df_reg2, REGRESSOR_FIELDS_2, freq='15min')
+            df_hist = pd.merge(df_hist, df_reg2, on='ds', how='outer')
     
     # Final check: Ensure all columns exist in df_hist (for cases where df_regressors was empty)
     df_hist = interpolate_regressors(df_hist, regressor_fields)
@@ -374,6 +434,26 @@ def fetch_future_regressors(db, forecast_days):
     
     # Combined standardization and interpolation
     df_future = preprocess_regressors(df_future, REGRESSOR_FIELDS, freq='15min')
+    
+    # Fetch 2nd future regressor source (optional)
+    if HAS_REGRESSOR_2:
+        query_future_2 = _build_flux_query(
+            bucket=BUCKETS['regressor_future_2'],
+            measurement=MEASUREMENTS['regressor_future_2'],
+            fields=REGRESSOR_FIELDS_2,
+            range_start='-1h',
+            range_stop=f'{forecast_days}d',
+            scale=REGRESSOR_SCALE,
+            interpolate=True
+        )
+        
+        df_future_2 = db.query_dataframe(query_future_2)
+        
+        if not df_future_2.empty:
+            df_future_2 = preprocess_regressors(df_future_2, REGRESSOR_FIELDS_2, freq='15min')
+            df_future = pd.merge(df_future, df_future_2, on='ds', how='outer')
+        else:
+            print("Warning: No data from 2nd future regressor source.")
     
     # Sort (interpolation already done in InfluxDB and preprocess_regressors)
     df_future = df_future.sort_values('ds').reset_index(drop=True)

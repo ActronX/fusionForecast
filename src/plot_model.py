@@ -55,8 +55,20 @@ def plot_model():
     plot_history_days = 14 
     forecast_days = 7
     
+    # Primary regressor fields
     reg_config = settings['influxdb']['fields']['regressor_history']
     regressor_fields = reg_config if isinstance(reg_config, list) else [reg_config]
+    
+    # Secondary regressor fields (optional)
+    bucket_2 = settings['influxdb']['buckets'].get('regressor_history_2', '')
+    has_reg_2 = bool(bucket_2)
+    if has_reg_2:
+        reg_config_2 = settings['influxdb']['fields'].get('regressor_history_2', [])
+        regressor_fields_2 = reg_config_2 if isinstance(reg_config_2, list) else [reg_config_2]
+    else:
+        regressor_fields_2 = []
+    
+    all_regressor_fields = regressor_fields + regressor_fields_2
     
     regressor_scale = settings['model']['preprocessing'].get('regressor_scale', 1.0)
     produced_scale = settings['model']['preprocessing'].get('produced_scale', 1.0)
@@ -87,6 +99,12 @@ def plot_model():
     if target_col in df_result_target.columns:
          df_result_target.rename(columns={target_col: 'y'}, inplace=True)
     df_hist = df_result_target[['ds', 'y']].copy()
+    
+    # Resample target to 15min FIRST (interpolate within real production data)
+    df_hist = df_hist.set_index('ds').resample('15min').mean()
+    df_hist['y'] = df_hist['y'].interpolate(method='linear', limit_direction='forward')
+    df_hist = df_hist.reset_index()
+    df_hist = df_hist.dropna(subset=['y'])  # Drop leading NaN (before first data point)
 
     # Fetch Regressors History
     print(f"  - Fetching Regressors History ({len(regressor_fields)} fields)...")
@@ -106,10 +124,38 @@ def plot_model():
         df_hist_reg['ds'] = pd.to_datetime(df_hist_reg['_time']).dt.tz_localize(None)
         cols_to_keep = ['ds'] + [c for c in df_hist_reg.columns if c in regressor_fields]
         df_hist_reg = df_hist_reg[cols_to_keep]
-        df_hist = pd.merge(df_hist, df_hist_reg, on='ds', how='outer')
+        # Resample regressors to 15min independently
+        df_hist_reg = df_hist_reg.set_index('ds').resample('15min').mean().interpolate(method='linear').reset_index()
+        # LEFT join: keep only timestamps where real production data exists
+        df_hist = pd.merge(df_hist, df_hist_reg, on='ds', how='left')
+    
+    # Fetch 2nd Regressor History (optional)
+    if has_reg_2:
+        print(f"  - Fetching 2nd Regressors History ({len(regressor_fields_2)} fields)...")
+        regressor_filter_2 = " or ".join([f'r["_field"] == "{f}"' for f in regressor_fields_2])
+        query_hist_reg_2 = f'''
+        from(bucket: "{settings['influxdb']['buckets']['regressor_history_2']}")
+          |> range(start: {range_start})
+          |> filter(fn: (r) => r["_measurement"] == "{settings['influxdb']['measurements']['regressor_history_2']}")
+          |> filter(fn: (r) => {regressor_filter_2})
+          |> map(fn: (r) => ({{ r with _value: r._value * {regressor_scale} }}))
+          |> pivot(rowKey:["_time"], columnKey: ["_field"], valueColumn: "_value")
+        '''
+        df_hist_reg_2 = db.query_dataframe(query_hist_reg_2)
+        if not df_hist_reg_2.empty:
+            df_hist_reg_2['ds'] = pd.to_datetime(df_hist_reg_2['_time']).dt.tz_localize(None)
+            cols_to_keep_2 = ['ds'] + [c for c in df_hist_reg_2.columns if c in regressor_fields_2]
+            df_hist_reg_2 = df_hist_reg_2[cols_to_keep_2]
+            # Resample to 15min independently
+            df_hist_reg_2 = df_hist_reg_2.set_index('ds').resample('15min').mean().interpolate(method='linear').reset_index()
+            # LEFT join
+            df_hist = pd.merge(df_hist, df_hist_reg_2, on='ds', how='left')
     
     df_hist = df_hist.sort_values('ds').reset_index(drop=True)
-    df_hist = df_hist.fillna(0)
+    # Fill NaN only in regressor columns (from left join gaps), NOT in y
+    for col in all_regressor_fields:
+        if col in df_hist.columns:
+            df_hist[col] = df_hist[col].interpolate(method='linear').fillna(0)
     
     # Fetch lagged regressor data if configured
     lagged_reg_config = settings['model']['neuralprophet'].get('lagged_regressors', {})
@@ -154,6 +200,27 @@ def plot_model():
     cols_to_keep_fut = ['ds'] + [c for c in df_fcst_reg.columns if c in regressor_fields]
     df_future_regressors = df_fcst_reg[cols_to_keep_fut].sort_values('ds')
     df_future_regressors = df_future_regressors.set_index('ds').resample('15min').interpolate(method='linear').reset_index()
+    
+    # Fetch 2nd Future Regressors (optional)
+    if has_reg_2:
+        print("  - Fetching 2nd Future Regressors...")
+        regressor_filter_2 = " or ".join([f'r["_field"] == "{f}"' for f in regressor_fields_2])
+        query_fcst_reg_2 = f'''
+        from(bucket: "{settings['influxdb']['buckets']['regressor_future_2']}")
+          |> range(start: -1h, stop: {forecast_days}d) 
+          |> filter(fn: (r) => r["_measurement"] == "{settings['influxdb']['measurements']['regressor_future_2']}")
+          |> filter(fn: (r) => {regressor_filter_2})
+          |> map(fn: (r) => ({{ r with _value: r._value * {regressor_scale} }}))
+          |> pivot(rowKey:["_time"], columnKey: ["_field"], valueColumn: "_value")
+        '''
+        df_fcst_reg_2 = db.query_dataframe(query_fcst_reg_2)
+        if not df_fcst_reg_2.empty:
+            df_fcst_reg_2['ds'] = pd.to_datetime(df_fcst_reg_2['_time']).dt.tz_localize(None)
+            cols_to_keep_fut_2 = ['ds'] + [c for c in df_fcst_reg_2.columns if c in regressor_fields_2]
+            df_fcst_reg_2 = df_fcst_reg_2[cols_to_keep_fut_2].sort_values('ds')
+            df_fcst_reg_2 = df_fcst_reg_2.set_index('ds').resample('15min').interpolate(method='linear').reset_index()
+            df_future_regressors = pd.merge(df_future_regressors, df_fcst_reg_2, on='ds', how='outer')
+            df_future_regressors = df_future_regressors.fillna(0)
     
     # 3. Construct Prediction Dataframe
     print("\n[3/5] Constructing prediction dataframe...")

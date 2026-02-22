@@ -221,9 +221,15 @@ def run_forecast():
                 print(f"  > Progress: {min(i + actual_len, len(future_points))}/{len(future_points)} steps generated")
                 
         except Exception as e:
-            print(f"Error during prediction at step {i}: {e}")
-            traceback.print_exc()
-            break
+            print(f"Warning: Prediction failed at step {i}: {e}")
+            print(f"  > Skipping chunk and continuing with fallback (zero-fill)...")
+            
+            # Create fallback: fill chunk with 0.0 so history stays continuous
+            fallback_chunk = future_points.iloc[i : i + n_forecasts].copy()
+            fallback_chunk['y'] = 0.0
+            keep_cols = ['ds', 'y'] + [col for col in regressor_names if col in fallback_chunk.columns]
+            current_history = pd.concat([current_history, fallback_chunk[keep_cols]], ignore_index=True)
+            continue
             
     if not predictions:
         print("Error: No predictions generated.")
