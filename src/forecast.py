@@ -278,6 +278,13 @@ def run_forecast():
 
     # Prepare for Database Write
     forecast_to_write = forecast[['ds', 'yhat']].copy()
+
+    # Optional: Export final processed forecast results
+    if export_path:
+        base, ext = os.path.splitext(export_path)
+        results_path = f"{base}_results{ext}"
+        forecast.to_csv(results_path, index=False)
+        print(f"Forecast results exported to {results_path} ({len(forecast)} rows)")
     
     # Apply nighttime zeroing based on solar position (Replaces simple threshold filter)
     # Latitude/Longitude are handled automatically by preprocess.py default mechanism or settings if needed
