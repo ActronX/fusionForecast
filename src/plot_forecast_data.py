@@ -143,8 +143,87 @@ def plot_forecast_data(csv_path=None):
     print("Done.")
 
 
+def plot_regressor_data(csv_path=None):
+    """
+    Plot the raw regressor input data (forecast_data.csv).
+    Shows global_tilted_irradiance and pv_estimate over time
+    using the same Plotly dark template as plot_forecast_data().
+    """
+    if csv_path is None:
+        csv_path = settings['model'].get('export_forecast_csv', 'exports/forecast_data.csv')
+
+    if not os.path.exists(csv_path):
+        print(f"Error: Regressor file not found at '{csv_path}'")
+        return
+
+    print(f"Loading regressor data from: {csv_path}")
+    df = pd.read_csv(csv_path, parse_dates=['ds'])
+
+    # All columns except ds are regressors
+    regressor_cols = [c for c in df.columns if c != 'ds']
+    print(f"  Rows:       {len(df)}")
+    print(f"  Regressors: {regressor_cols}")
+    print(f"  Range:      {df['ds'].min()} → {df['ds'].max()}")
+
+    colors = ['#4ECDC4', '#FFEAA7', '#DDA0DD', '#96CEB4', '#45B7D1', '#98D8C8']
+
+    fig = make_subplots(
+        rows=len(regressor_cols), cols=1,
+        shared_xaxes=True,
+        vertical_spacing=0.04,
+        subplot_titles=regressor_cols,
+        row_heights=[1 / len(regressor_cols)] * len(regressor_cols)
+    )
+
+    for i, col in enumerate(regressor_cols):
+        color = colors[i % len(colors)]
+        r, g, b = int(color[1:3], 16), int(color[3:5], 16), int(color[5:7], 16)
+        fig.add_trace(
+            go.Scatter(
+                x=df['ds'],
+                y=df[col],
+                name=col,
+                line=dict(color=color, width=1.5),
+                fill='tozeroy',
+                fillcolor=f'rgba({r},{g},{b},0.12)',
+                hovertemplate=f'<b>{col}</b><br>%{{x}}<br>%{{y:.1f}}<extra></extra>'
+            ),
+            row=i + 1, col=1
+        )
+
+    fig.update_layout(
+        title=dict(
+            text='FusionForecast – Future Regressor Input',
+            font=dict(size=20)
+        ),
+        height=260 * len(regressor_cols),
+        template='plotly_dark',
+        showlegend=True,
+        legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1),
+        hovermode='x unified'
+    )
+
+    output_dir = 'exports'
+    os.makedirs(output_dir, exist_ok=True)
+    out_path = os.path.join(output_dir, 'forecast_regressors_overview.html')
+    fig.write_html(out_path)
+    print(f"Chart saved: {out_path}")
+    webbrowser.open(f'file://{os.path.abspath(out_path)}')
+    print("Done.")
+
+
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description='Plot FusionForecast forecast data')
-    parser.add_argument('--csv', type=str, default=None, help='Base path to forecast CSV')
+    parser = argparse.ArgumentParser(description='Plot FusionForecast data')
+    parser.add_argument('--csv', type=str, default=None, help='Path to CSV file')
+    parser.add_argument(
+        '--mode', type=str, default='forecast',
+        choices=['forecast', 'regressors'],
+        help='forecast = plot yhat results | regressors = plot input regressors (forecast_data.csv)'
+    )
     args = parser.parse_args()
-    plot_forecast_data(csv_path=args.csv)
+
+    if args.mode == 'regressors':
+        plot_regressor_data(csv_path=args.csv)
+    else:
+        plot_forecast_data(csv_path=args.csv)
+

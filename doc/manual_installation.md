@@ -48,8 +48,8 @@ Connection details for your InfluxDB v2 instance.
 Centralized mapping for where data is stored and retrieved.
 - **Buckets**:
     - `history_produced`: Where your actual PV meters store past production.
-    - `regressor_history` / `regressor_future`: Storage for weather data (training vs. prediction).
-    - `regressor_history_2` / `regressor_future_2`: Optional 2nd regressor source. Set to `""` to disable.
+    - `regressor_history` / `regressor_future`: Primary weather data source (training vs. prediction) — typically **Open-Meteo** irradiance.
+    - `regressor_history_2` / `regressor_future_2`: Optional **2nd regressor source** for an additional commercial PV forecast service. When set, the model can leverage a dedicated PV forecast alongside the weather data to improve accuracy. Set to `""` to disable.
     - `target_forecast`: Where prediction results and nowcasts are written.
     - `live`: Real-time power data used for damping factor calculation.
 - **Measurements**:
@@ -60,7 +60,7 @@ Individual field names within the measurements. **Every field is cross-reference
 - `produced`: The field name for actual power/energy (e.g., `generatedWh`).
 - `forecast`: The target field for prediction output.
 - `regressor_history` / `regressor_future`: The primary irradiance field (GHI).
-- `regressor_history_2` / `regressor_future_2`: Optional 2nd regressor fields. Set to `[""]` to disable.
+- `regressor_history_2` / `regressor_future_2`: Field names for the 2nd regressor source (e.g. `forecast_w` from a commercial PV forecast service). Set to `[""]` to disable.
 
 
 #### 5. Weather Source `[weather.open_meteo]`
@@ -73,6 +73,8 @@ Configures how weather data is fetched from the Open-Meteo API.
 - `path`: File path for the trained Prophet model (`.pkl`).
 - `training_days`: Period of history to use (default: 731 days for 2 full years).
 - `forecast_days`: How many days to predict into the future (default: 14).
+- `export_training_csv`: Path to export training data as CSV (e.g., `"exports/training_data.csv"`). Set to `""` to disable. Contains all columns used for model training (ds, y, regressors).
+- `export_forecast_csv`: Path to export forecast input data as CSV (e.g., `"exports/forecast_data.csv"`). Set to `""` to disable. Additionally exports the AR history context as `*_history.csv`.
 
 #### 7. Preprocessing `[model.preprocessing]`
 Fine-tuning of data before it entering the ML model.
@@ -253,6 +255,34 @@ To optimize the model's accuracy, you can tune the hyperparameters (e.g., `ar_la
 - Windows: `..\scripts\tune.bat` or `python -m src.tune`
 - Linux: `../scripts/tune.sh` or `python3 -m src.tune`
 
+> [!TIP]
+> Control the validation strategy via `settings.toml [model.tuning]`:
+> - `tuning_folds = 1` → fast single 80/20 split
+> - `tuning_folds = 5` → robust 5-fold cross-validation
+
+### 9. Visualization (Optional)
+
+Interactive Plotly charts can be generated from the exported CSV files. Enable CSV export in `settings.toml` first:
+```toml
+[model]
+export_training_csv = "exports/training_data.csv"
+export_forecast_csv = "exports/forecast_data.csv"
+```
+
+**Plot forecast results** (`yhat` vs. regressors):
+- Windows: `..\scripts\plot_forecast_data.bat` or `python -m src.plot_forecast_data`
+- Linux: `python3 -m src.plot_forecast_data`
+
+**Plot regressor inputs** (irradiance, pv_estimate over 14-day horizon):
+- Windows: `..\scripts\plot_forecast_data.bat regressors` or `python -m src.plot_forecast_data --mode regressors`
+- Linux: `python3 -m src.plot_forecast_data --mode regressors`
+
+**Plot training data** (inspect training input quality):
+- Windows: `..\scripts\plot_training_data.bat` or `python -m src.plot_training_data`
+- Linux: `python3 -m src.plot_training_data`
+
+Charts open automatically in the browser and are also saved to `exports/`.
+
 #### Evaluation Metrics
 
 The tuning script evaluates model performance using Cross-Validation and calculates the following metrics. **Note**: To ensure relevance for PV systems, values during nighttime (solar elevation < -3°) are **excluded** from these calculations. This prevents the metrics from being artificially improved by easy "0 Watt" predictions during the night.
@@ -295,7 +325,13 @@ Here is a detailed description of the Python scripts located in `../src/`:
 
 - **`../src/tune.py`**: Performs **Hyperparameter Tuning** using **Grid Search** to find the optimal NeuralProphet parameters (e.g., `ar_layers`, `ar_reg`, `seasonality_mode`) for your specific data.
 
-- **`../src/plot_model.py`**: Generates interactive Plotly charts of the model components (trend, seasonality) for visual inspection.
+- **`../src/plot_forecast_data.py`**: Generates interactive **Plotly** charts from the exported CSV files. Two modes:
+  - `--mode forecast` *(default)*: Plots forecast results (`*_results.csv`) with `yhat` and optional history overlay.
+  - `--mode regressors`: Plots the future regressor inputs (`forecast_data.csv`, e.g. irradiance, pv_estimate).
+
+- **`../src/plot_training_data.py`**: Plots the training data CSV (`training_data.csv`) for visual inspection of the input data quality.
+
+- **`../src/plot_model.py`**: Generates interactive Plotly charts of the trained model components (trend, seasonality) for visual inspection.
 
 
 ## InfluxDB Data Flow

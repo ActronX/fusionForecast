@@ -9,8 +9,15 @@ if exist "venv\Scripts\activate.bat" (
     echo Warning: venv not found. Using system python.
 )
 
-echo Plotting forecast data...
-python -m src.plot_forecast_data
+REM Usage:
+REM   plot_forecast_data.bat              -> forecast results (yhat)
+REM   plot_forecast_data.bat regressors   -> regressor inputs (forecast_data.csv)
+
+set MODE=forecast
+if /I "%~1"=="regressors" set MODE=regressors
+
+echo Plotting %MODE% data...
+python -m src.plot_forecast_data --mode %MODE%
 if %ERRORLEVEL% NEQ 0 (
     echo Execution failed with error code %ERRORLEVEL%
     exit /b %ERRORLEVEL%
