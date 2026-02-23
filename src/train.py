@@ -1,6 +1,7 @@
 import os
 import sys
 import pandas as pd
+import numpy as np
 import warnings
 import logging
 
@@ -104,13 +105,24 @@ def train_model():
             mode=reg_mode
         )
     
-    print(f"Training data summary before processing:\n{df_prophet.describe()}")
+    print(f"Total data rows available: {len(df_prophet)}")
     
     # Split data for validation (recommended by NeuralProphet docs)
+    # validation_pct = 0 → no split, train on full dataset
+    # validation_pct > 0 → NeuralProphet split_df expects absolute row count (int >= 1)
     validation_pct = p_settings.get('validation_pct', 0.1)
-    print(f"\nSplitting data: {100*(1-validation_pct):.0f}% train, {100*validation_pct:.0f}% validation...")
-    df_train, df_val = model.split_df(df_prophet, freq='15min', valid_p=validation_pct)
-    print(f"  Train: {len(df_train)} rows, Validation: {len(df_val)} rows")
+    if validation_pct > 0:
+        valid_rows = max(1, int(len(df_prophet) * validation_pct))
+        print(f"\nSplitting data into Training and Test sets:")
+        df_train, df_val = model.split_df(df_prophet, freq='15min', valid_p=valid_rows)
+        print(f"  - Training data:   {len(df_train)} rows ({100-100*validation_pct:.0f}%)")
+        print(f"  - Test/Val data:   {len(df_val)} rows ({100*validation_pct:.0f}%)")
+    else:
+        print("\nNo validation split (validation_pct = 0), training on full dataset...")
+        df_train = df_prophet
+        df_val = None
+        print(f"  - Training data:   {len(df_train)} rows (100%)")
+        print(f"  - Test/Val data:   0 rows")
 
     print("Fitting model...")
     metrics = model.fit(df_train, freq='15min', validation_df=df_val)
@@ -119,10 +131,14 @@ def train_model():
     if metrics is not None and len(metrics) > 0:
         final = metrics.tail(1).iloc[0]
         print(f"\n[Training Complete]")
-        print(f"  Final Train RMSE: {final.get('RMSE', 'N/A'):.2f}")
-        print(f"  Final Val RMSE:   {final.get('RMSE_val', 'N/A'):.2f}")
-        print(f"  Final Train MAE:  {final.get('MAE', 'N/A'):.2f}")
-        print(f"  Final Val MAE:    {final.get('MAE_val', 'N/A'):.2f}")
+
+        def fmt(val):
+            return f"{val:.2f}" if isinstance(val, (int, float, np.number)) else str(val)
+
+        print(f"  Final Train RMSE: {fmt(final.get('RMSE', 'N/A'))}")
+        print(f"  Final Val RMSE:   {fmt(final.get('RMSE_val', 'N/A'))}")
+        print(f"  Final Train MAE:  {fmt(final.get('MAE', 'N/A'))}")
+        print(f"  Final Val MAE:    {fmt(final.get('MAE_val', 'N/A'))}")
     
     # Save trained model
     model_path = settings['model']['path']
