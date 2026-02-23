@@ -159,8 +159,28 @@ def plot_regressor_data(csv_path=None):
     print(f"Loading regressor data from: {csv_path}")
     df = pd.read_csv(csv_path, parse_dates=['ds'])
 
-    # All columns except ds are regressors
-    regressor_cols = [c for c in df.columns if c != 'ds']
+    # Determine which regressors to plot based on settings
+    fields = settings['influxdb']['fields']
+    buckets = settings['influxdb']['buckets']
+
+    # Primary regressors (always plotted)
+    reg1 = fields.get('regressor_future', [])
+    allowed = set(reg1 if isinstance(reg1, list) else [reg1])
+
+    # 2nd regressor source: only include if bucket is set (non-empty)
+    bucket2 = buckets.get('regressor_future_2', '')
+    if bucket2:
+        reg2 = fields.get('regressor_future_2', [])
+        allowed |= set(reg2 if isinstance(reg2, list) else [reg2])
+
+    # Filter CSV columns: keep only configured + non-empty regressors
+    regressor_cols = [c for c in df.columns if c != 'ds' and c in allowed]
+
+    # Fallback: if settings don't match CSV (e.g. different field names), plot all
+    if not regressor_cols:
+        print("  Warning: No matching columns from settings, plotting all CSV columns.")
+        regressor_cols = [c for c in df.columns if c != 'ds']
+
     print(f"  Rows:       {len(df)}")
     print(f"  Regressors: {regressor_cols}")
     print(f"  Range:      {df['ds'].min()} → {df['ds'].max()}")

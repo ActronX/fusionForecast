@@ -255,6 +255,8 @@ def plot_model():
         # 5. Plotting
         print("\n[5/5] Generating plots...")
         
+        output_dir = 'exports'
+        os.makedirs(output_dir, exist_ok=True)
         output_files = []
         
         # ─────────────────────────────────────────────────────────────────
@@ -271,7 +273,7 @@ def plot_model():
                 trace.name = 'Actual'
                 
         fig1.update_layout(title="Forecast Overview (History + Future)")
-        fig1_path = os.path.abspath("plot_overview.html")
+        fig1_path = os.path.abspath(os.path.join(output_dir, "plot_overview.html"))
         fig1.write_html(fig1_path)
         output_files.append(fig1_path)
         
@@ -280,7 +282,7 @@ def plot_model():
         # ─────────────────────────────────────────────────────────────────
         print("  - Plot 2: Components...")
         fig2 = model.plot_components(forecast)
-        fig2_path = os.path.abspath("plot_components.html")
+        fig2_path = os.path.abspath(os.path.join(output_dir, "plot_components.html"))
         fig2.write_html(fig2_path)
         output_files.append(fig2_path)
         
@@ -304,7 +306,7 @@ def plot_model():
                 yaxis_title="Contribution (W)",
                 template="plotly_white"
             )
-            fig3_path = os.path.abspath("plot_regressor_impact.html")
+            fig3_path = os.path.abspath(os.path.join(output_dir, "plot_regressor_impact.html"))
             fig3.write_html(fig3_path)
             output_files.append(fig3_path)
         
@@ -313,7 +315,7 @@ def plot_model():
         # ─────────────────────────────────────────────────────────────────
         print("  - Plot 4: Model Parameters...")
         fig4 = model.plot_parameters()
-        fig4_path = os.path.abspath("plot_parameters.html")
+        fig4_path = os.path.abspath(os.path.join(output_dir, "plot_parameters.html"))
         fig4.write_html(fig4_path)
         output_files.append(fig4_path)
         
@@ -354,7 +356,7 @@ def plot_model():
                 height=250 * len(steps_to_show),
                 template="plotly_white"
             )
-            fig5_path = os.path.abspath("plot_ar_steps.html")
+            fig5_path = os.path.abspath(os.path.join(output_dir, "plot_ar_steps.html"))
             fig5.write_html(fig5_path)
             output_files.append(fig5_path)
         
@@ -413,7 +415,7 @@ def plot_model():
                 height=600
             )
             
-            fig6_path = os.path.abspath("plot_residuals.html")
+            fig6_path = os.path.abspath(os.path.join(output_dir, "plot_residuals.html"))
             fig6.write_html(fig6_path)
             output_files.append(fig6_path)
         
@@ -424,7 +426,7 @@ def plot_model():
             print("  - Plot 7: Forecast Focus (1st step)...")
             fig7 = model.plot(forecast, forecast_in_focus=1)
             fig7.update_layout(title="Forecast Focus: 1-Step Ahead (15 min)")
-            fig7_path = os.path.abspath("plot_forecast_focus.html")
+            fig7_path = os.path.abspath(os.path.join(output_dir, "plot_forecast_focus.html"))
             fig7.write_html(fig7_path)
             output_files.append(fig7_path)
         
