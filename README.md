@@ -141,7 +141,7 @@ Docker volumes ensure your data survives container restarts:
 ### Automated Updates
 
 The container automatically:
-- ✅ Fetches weather forecasts every 15 minutes.
+- ✅ Fetches weather forecasts every 15 minutes (skips if no new model run is available via [Open-Meteo Metadata API](https://open-meteo.com/en/docs/model-updates)).
 - ✅ Generates PV forecasts with intraday correction every 15 minutes.
 - ✅ Retrains model monthly (1st of month at 02:00).
 

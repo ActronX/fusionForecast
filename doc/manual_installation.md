@@ -50,10 +50,10 @@ Centralized mapping for where data is stored and retrieved.
     - `history_produced`: Where your actual PV meters store past production.
     - `regressor_history` / `regressor_future`: Primary weather data source (training vs. prediction) — typically **Open-Meteo** irradiance.
     - `regressor_history_2` / `regressor_future_2`: Optional **2nd regressor source** for an additional commercial PV forecast service. When set, the model can leverage a dedicated PV forecast alongside the weather data to improve accuracy. Set to `""` to disable.
-    - `target_forecast`: Where prediction results and nowcasts are written.
+    - `target_forecast`: Where prediction results are written.
     - `live`: Real-time power data used for damping factor calculation.
 - **Measurements**:
-    - Defines the table names within InfluxDB for each category (e.g., `pv`, `weather`, `nowcast`).
+    - Defines the table names within InfluxDB for each category (e.g., `pv`, `weather`).
 
 #### 4. Field Mapping `[influxdb.fields]`
 Individual field names within the measurements. **Every field is cross-referenced in the config comments to its bucket and measurement.**
@@ -68,6 +68,13 @@ Configures how weather data is fetched from the Open-Meteo API.
 - `historic` / `forecast`: Separate endpoints for training history and future predictions.
 - `models`: Selection of the weather model (e.g., `best_match`, `icon_d2`).
 - `minutely_15`: The specific variable to fetch (default: `diffuse_radiation`, `direct_normal_irradiance`).
+
+#### 5a. Model Update Check `[weather.open_meteo.model_update]`
+Optional pre-check before fetching forecast data. Queries the [Open-Meteo Metadata API](https://open-meteo.com/en/docs/model-updates) to detect new weather model runs.
+- `model`: Open-Meteo model identifier (e.g., `dwd_icon_d2_15min`, `dwd_icon_eu`). Set to `""` to disable the check entirely.
+- `propagation_minutes`: Minutes to wait after a model update becomes available to ensure all Open-Meteo servers are synchronized (default: `15`).
+
+When enabled, `fetch_future_weather.py` will skip the fetch if no new model data is available, avoiding redundant API calls and writes.
 
 #### 6. Model Parameters `[model]`
 - `path`: File path for the trained Prophet model (`.pkl`).
@@ -215,9 +222,15 @@ The training script loads historical data, trains the NeuralProphet model, and s
 
 Before creating a forecast, you must fetch the latest weather forecast from DWD/Open-Meteo. This data serves as the regressor for the prediction.
 
+If `[weather.open_meteo.model_update]` is configured, the script automatically checks the Open-Meteo Metadata API for new model runs before fetching. If no new data is available, the fetch is skipped.
+
 **Start:**
 - Windows: `..\scripts\fetch_future_weather.bat` or `python -m src.fetch_future_weather`
 - Linux: `../scripts/fetch_future_weather.sh` or `python3 -m src.fetch_future_weather`
+
+**Force fetch** (ignores model update check, deletes state file):
+- Windows: `..\scripts\fetch_future_weather.bat --force`
+- Linux: `../scripts/fetch_future_weather.sh --force`
 
 ### 5. Create Forecast
 
@@ -317,8 +330,9 @@ Here is a detailed description of the Python scripts located in `../src/`:
 - **`../src/forecast.py`**: Generates **Production** forecasts using multi-step prediction with **intraday correction**. Uses AR-Net for autoregressive patterns based on recent actual production. Predicts generation in 24-hour chunks and writes to InfluxDB.
 
 ### Data Fetching & Calculations
-- **`../src/fetch_future_weather.py`**: Fetches **current** weather forecasts from Open-Meteo. Uses `weather_utils.py` to calculate effective irradiance (GTI) and clearsky GHI.
+- **`../src/fetch_future_weather.py`**: Fetches **current** weather forecasts from Open-Meteo. Optionally checks for new model runs via `check_model_update.py` before fetching. Supports `--force` to skip the check. Uses `weather_utils.py` to calculate effective irradiance (GTI) and clearsky GHI.
 - **`../src/fetch_historic_weather.py`**: Fetches **historical** weather data from Open-Meteo. Uses `weather_utils.py` to calculate effective irradiance (GTI) and clearsky GHI.
+- **`../src/check_model_update.py`**: Checks the [Open-Meteo Metadata API](https://open-meteo.com/en/docs/model-updates) for new weather model runs. Can be used standalone (`python -m src.check_model_update [model_name]`) or is called automatically by `fetch_future_weather.py`.
 - **`../src/weather_utils.py`**: **Consolidated Physics Model**. Shared utility that handles `pvlib` calculations for solar position, plane of array (POA) irradiance, and clearsky GHI.
 
 ### Utilities & Maintenance

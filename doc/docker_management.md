@@ -45,8 +45,13 @@ You can manually trigger specific parts of the pipeline inside the running conta
 
 **Current Forecast (Future):**
 Updates the `regressor_future` bucket with the latest weather forecast.
+If `[weather.open_meteo.model_update]` is configured, the script checks for new model runs first and skips the fetch if no new data is available.
 ```bash
 docker exec fusionforecast-app python3 -m src.fetch_future_weather
+```
+Force fetch (ignores model update check, deletes state file):
+```bash
+docker exec fusionforecast-app python3 -m src.fetch_future_weather --force
 ```
 
 **Historical Data (Past):**

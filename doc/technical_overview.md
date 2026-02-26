@@ -14,8 +14,9 @@ Here is a detailed description of the Python scripts located in `src/`:
   - Loads the model, fetches future weather data and recent production (via `data_loader.py`), predicts generation, and writes to InfluxDB.
 
 ### Data Fetching & Calculations
-- **`src/fetch_future_weather.py`**: Fetches **current** weather forecasts from Open-Meteo. Uses `weather_utils.py` to calculate effective irradiance (GTI) and clearsky GHI.
+- **`src/fetch_future_weather.py`**: Fetches **current** weather forecasts from Open-Meteo. Optionally checks for new model runs via `check_model_update.py` before fetching (configurable in `settings.toml`). Supports `--force` to skip the check. Uses `weather_utils.py` to calculate effective irradiance (GTI) and clearsky GHI.
 - **`src/fetch_historic_weather.py`**: Fetches **historical** weather data from Open-Meteo. Uses `weather_utils.py` to calculate effective irradiance (GTI) and clearsky GHI.
+- **`src/check_model_update.py`**: Checks the [Open-Meteo Metadata API](https://open-meteo.com/en/docs/model-updates) for new weather model runs. Standalone CLI or called automatically by `fetch_future_weather.py`.
 - **`src/weather_utils.py`**: **Consolidated Physics Model**. Shared utility that handles `pvlib` calculations for solar position, plane of array (POA) irradiance, and clearsky GHI.
 
 ### Utilities & Maintenance
