@@ -33,7 +33,6 @@ regressor_history_2 = ""                  # 2nd source measurement | ref: bucket
 regressor_future_2  = ""                  # 2nd source measurement | ref: buckets.regressor_future_2
 forecast          = "production_forecast" # Output for model predictions | ref: buckets.target_forecast
 live              = "energy_meter"        # Real-time data source | ref: buckets.live
-nowcast           = "nowcast"             # Output for nowcast adjustments | ref: buckets.target_forecast
 
 [influxdb.fields]
 # Data field mapping within measurements
@@ -65,6 +64,13 @@ forecast_days = 14                            # Number of days to predict
 models = "best_match"                          # Model selection
 minutely_15 = ["diffuse_radiation", "direct_normal_irradiance"] # 15min resolution variables
 hourly = ["temperature_2m", "snow_depth", "wind_speed_10m"]
+
+[weather.open_meteo.model_update]
+# Model update check before fetching forecast data
+# Open-Meteo metadata model name (see https://open-meteo.com/en/docs/model-updates)
+# Set to "" to disable the update check
+model = ""
+propagation_minutes = 15  # Minutes to wait after availability for full server propagation
 
 [model]
 # Central model parameters and storage

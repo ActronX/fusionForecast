@@ -1,13 +1,25 @@
 """
 Script to fetch forecast weather data from Open-Meteo and store it in InfluxDB.
-Refactored to use shared WeatherFetcher.
+Optionally checks for a model update before fetching.
+
+Usage:
+    python -m src.fetch_future_weather [--force]
 """
 
+import os
+import sys
+import argparse
 import pandas as pd
 from src.config import settings
 from src.weather_fetcher import WeatherFetcher
+from src.check_model_update import STATE_FILE
 
 def main():
+    parser = argparse.ArgumentParser(description="Fetch forecast weather data from Open-Meteo.")
+    parser.add_argument("--force", action="store_true",
+                        help="Force fetch: delete state file and skip model update check.")
+    args = parser.parse_args()
+
     print("Starting Future Weather (Forecast) data fetch...")
     print(f"Local Time: {pd.Timestamp.now()}")
 
@@ -20,6 +32,36 @@ def main():
          print("Error: Missing 'regressor_future' in settings.")
          return
 
+    # --- Model Update Check ---
+    if args.force:
+        # Delete state file and skip check
+        project_root = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
+        state_path = os.path.join(project_root, STATE_FILE)
+        if os.path.exists(state_path):
+            os.remove(state_path)
+            print(f"--force: Deleted state file '{STATE_FILE}'.")
+        print("--force: Skipping model update check. Forcing fetch...")
+    else:
+        model_update_cfg = settings['weather']['open_meteo'].get('model_update', {})
+        model_name = model_update_cfg.get('model', '')
+        propagation_minutes = model_update_cfg.get('propagation_minutes')
+
+        if model_name:
+            from src.check_model_update import check_update
+            result = check_update(model=model_name, propagation_minutes=propagation_minutes)
+            print(result["message"])
+
+            if result["exit_code"] == 1:
+                print("No new model data available. Skipping fetch.")
+                return
+            elif result["exit_code"] == 2:
+                print("Warning: Model update check failed. Proceeding with fetch anyway.")
+            else:
+                print("New model data available. Proceeding with fetch...")
+        else:
+            print("Model update check disabled (no model configured).")
+
+    # --- Fetch Weather Data ---
     station_settings = settings['station']
     om_forecast = settings['weather']['open_meteo']['forecast']
     
@@ -57,3 +99,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
