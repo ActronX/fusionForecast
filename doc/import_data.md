@@ -70,7 +70,7 @@ curl -X POST "http://localhost:8086/api/v2/write?org=fusionforecast&bucket=energ
 
 ## 2. Pushing Live Data (Intraday Correction)
 
-For real-time intraday correction, you can optionally push your current PV production into the `live` bucket. The model uses this data as a **lagged regressor** (last 2 hours of actual production) to dynamically adjust forecasts. 
+For real-time intraday correction, you can optionally push your current PV production into the `energy_meter` bucket. The model uses this data for **autoregression** (AR), utilizing recent actual production over a configured lag window (`n_lags`) to dynamically adjust forecasts. 
 
 **Mapping:**
 - **Bucket**: `energy_meter` (Live)
