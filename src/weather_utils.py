@@ -86,6 +86,25 @@ def calculate_gti_and_clearsky(df, station_settings):
     # Overwrite/Add GTI
     df['global_tilted_irradiance'] = irradiance['poa_global'].fillna(0)
     
+    # Calculate Angle of Incidence (AOI)
+    aoi = pvlib.irradiance.aoi(
+        surface_tilt=surface_tilt,
+        surface_azimuth=surface_azimuth,
+        solar_zenith=solpos['zenith'],
+        solar_azimuth=solpos['azimuth']
+    )
+    
+    # Calculate Incident Angle Modifier (IAM) - using 'ashrae' model as a robust default
+    iam = pvlib.iam.ashrae(aoi).fillna(0)
+    
+    # Calculate Effective Irradiance (GTI factoring in reflection losses on the glass)
+    # The IAM factor primarily applies to the direct solar beam (poa_direct)
+    df['effective_irradiance'] = (
+        irradiance['poa_direct'] * iam +
+        irradiance['poa_sky_diffuse'] +
+        irradiance['poa_ground_diffuse']
+    ).fillna(0)
+    
     # Calculate and add Clear Sky GHI
     clearsky = location.get_clearsky(df.index)
     df['clearsky_ghi'] = clearsky['ghi']
