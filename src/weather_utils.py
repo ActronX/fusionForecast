@@ -67,7 +67,10 @@ def calculate_gti_and_clearsky(df, station_settings):
     ghi = (dni * pvlib.tools.cosd(solpos['zenith']) + dhi).fillna(0)
     ghi[ghi < 0] = 0
     
-    # Calculate Total Irradiance (GTI) using 'isotropic' model
+    # Calculate extraterrestrial radiation, required for Perez models
+    dni_extra = pvlib.irradiance.get_extra_radiation(df.index)
+    
+    # Calculate Total Irradiance (GTI) using 'perez' model
     irradiance = pvlib.irradiance.get_total_irradiance(
         surface_tilt=surface_tilt,
         surface_azimuth=surface_azimuth,
@@ -76,7 +79,8 @@ def calculate_gti_and_clearsky(df, station_settings):
         dni=dni,
         ghi=ghi,
         dhi=dhi,
-        model='isotropic'
+        dni_extra=dni_extra,
+        model='perez'
     )
     
     # Overwrite/Add GTI
