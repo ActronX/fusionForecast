@@ -44,6 +44,8 @@ output 3 -> Relay C3
 output 4 -> Debug (calculation details)
 ```
 
+![Solar Consumer Cascade flow with relay outputs C1-C3](example-flow.png)
+
 The minimal example is [`example-flow.json`](example-flow.json). Import it in Node-RED via **Menu > Import** (or **Import > Clipboard**) to get the wiring above.
 
 Docker seeds this example as `/data/flows.json` when the `nodered-data` named volume is created on first start. An existing volume is not overwritten; in that case import `example-flow.json` manually or recreate the volume deliberately.
