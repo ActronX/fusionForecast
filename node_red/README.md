@@ -1,241 +1,138 @@
-# Smart Solar Consumer Control (Node-RED)
+# Solar Consumer Cascade (Node-RED)
 
-## Overview
+The custom Node-RED node `solar-consumer` controls a three-stage consumer cascade (C1-C3) from battery SoC and PV forecast data. The evaluation logic is implemented in [`lib/evaluate.js`](node-red-contrib-solar-consumer/lib/evaluate.js) and configured in the node editor, with defaults from [`lib/defaults.js`](node-red-contrib-solar-consumer/lib/defaults.js).
 
-This Node-RED flow implements an intelligent control logic for high-power electrical consumers (e.g., heaters, pumps, EV chargers).
+## What it does
 
-Instead of simple threshold switching, it calculates the **projected solar energy surplus** for the next 24 hours. It switches the consumer **ON** only if the surplus is sufficient to cover the runtime costs without draining the home battery below a reserved level.
+- Reads only from InfluxDB (`type_soc` + `type_forecast`). It never writes to InfluxDB.
+- Derives the usable PV window from forecast bins where PV exceeds the household base load.
+- Calculates the projected energy surplus, dynamic reserve and the 95 % charge target.
+- Evaluates C1 -> C2 -> C3 in order. A failed enabled stage blocks all later stages; disabled slots are pass-through.
+- Allows battery support only within `max_battery_support_w`; otherwise rejects with `GRID_IMPORT_REQUIRED`.
+- Keeps a crash/hysteresis lock in Node-RED context and fails safe (all relays OFF) on unexpected errors.
 
-It includes advanced protection features:
-* **Hysteresis:** Prevents rapid toggling ("flip-flopping") by requiring a specific charge level recovery.
-* **Dynamic Reserve:** Maintains a high safety buffer when battery is low, but reduces it when battery is full to maximize capacity usage.
-* **Safety Guard:** Prevents operation if forecast data is incomplete or outdated.
-* **Real-Time Forecast Correction:** Dynamically adjusts the forecast curve ("Damping Factor") based on the actual solar performance since sunrise. If the day is cloudier/sunnier than predicted, the future forecast is scaled accordingly.
-* **Battery Protection:** Hard cutoff when SoC is critically low.
+## Installation
 
----
+The node is installed into the Docker image by `docker/Dockerfile.nodered`:
 
-## Installation (Import)
+```bash
+docker compose -f docker/docker-compose.yml build nodered
+docker compose -f docker/docker-compose.yml up -d nodered
+```
 
-A complete **ready-to-use Flow** is available in this repository.
+For a standalone Node-RED installation:
 
-1.  Open the file [`flow.json`](flow.json).
-2.  Copy the entire JSON content.
-3.  In your Node-RED Dashboard: Go to **Menu** -> **Import**.
-4.  Paste the content and click **Import**.
+```bash
+cd ~/.node-red
+npm install /path/to/node-red-contrib-solar-consumer
+```
 
-This will create the full logic chain as described below.
+Restart Node-RED afterwards. The node appears in the **solar** category as **Solar Consumer Cascade**.
 
----
+## Flow wiring
 
-## Wiring / Node Connections
+```text
+[Inject] -> [InfluxDB in (read-only)] -> [Solar Consumer Cascade]
+                                             |-> output 1: C1 relay (payload Boolean)
+                                             |-> output 2: C2 relay (payload Boolean)
+                                             |-> output 3: C3 relay (payload Boolean)
+                                             |-> output 4: debug_calc
 
-To make this logic work, connect your Node-RED nodes in the following linear sequence:
+output 1 -> Relay C1
+output 2 -> Relay C2
+output 3 -> Relay C3
+output 4 -> Debug (calculation details)
+```
 
-![Wiring](Wiring.jpg)
+The minimal example is [`example-flow.json`](example-flow.json). Import it in Node-RED via **Menu > Import** (or **Import > Clipboard**) to get the wiring above.
 
-`[Inject] --> [Template] --> [InfluxDB] --> [Function] --> [Output]`
+Docker seeds this example as `/data/flows.json` when the `nodered-data` named volume is created on first start. An existing volume is not overwritten; in that case import `example-flow.json` manually or recreate the volume deliberately.
 
+## Configuration
 
+All values are configured in the node editor. The 24-hour profiles are indexed by **UTC hour** (00-23). Defaults are defined in [`lib/defaults.js`](node-red-contrib-solar-consumer/lib/defaults.js).
 
-### 1. Inject Node (Trigger)
-* **Setting:** Set an interval (e.g., every 15 minutes).
-* **Purpose:** Starts the process regularly.
+| Field | Unit | Default | Description |
+|---|---:|---:|---|
+| `min_soc` | % | 20 | Low-battery cutoff; `min_soc + soc_hysteresis` must be <= 100 |
+| `soc_hysteresis` | % | 15 | Recovery buffer above `min_soc` |
+| `min_runtime_minutes` | min | 30 | Runtime used for the cycle-cost calculation |
+| `battery_capacity_kwh` | kWh | 4.5 | Battery capacity |
+| `reserve_kwh` | kWh | 2 | Dynamic reserve base |
+| `battery_efficiency` | 0-1 | 0.85 | Charging efficiency |
+| `allow_battery_support` | bool | true | Allow battery discharge for consumers above base load |
+| `max_battery_support_w` | W | 2000 | Maximum battery support power |
+| `base_load_w` | W | 24-value array | Household base load per UTC hour |
+| `consumers.consumer1` | W | enabled, 24-value array | Cascade stage 1 |
+| `consumers.consumer2` | W | enabled, 24 x 1800 | Cascade stage 2 |
+| `consumers.consumer3` | W | enabled, 24 x 800 | Cascade stage 3 |
 
-### 2. Template Node (Configuration)
-* **Setting:** Set "Property" to `msg.config`.
-* **Format:** Select "JSON".
-* **Content:** Paste your configuration JSON here (e.g., `{"consumer": {"min_soc": 10, "battery_efficiency": 0.90, ...}}`).
-* **Purpose:** Loads the static settings into the message **before** the query runs.
+`base_load_w` may also be a single number in a `msg.config` override; the editor stores a 24-value array.
 
-### 3. InfluxDB Node (Data Fetch)
-* **Setting:** Use the specific Flux query provided in the documentation.
-* **Purpose:** Fetches the SoC and Forecast data.
-* **Note:** The node writes the result to `msg.payload`, but it preserves the `msg.config` attached in the previous step.
+### Optional overrides
 
-### 4. Function Node (The Logic)
-* **Setting:** Paste the JavaScript code provided for this project.
-* **Purpose:** Performs the calculation, checks safety rules, and decides the state.
+- `msg.config.consumer` deep-merges over the editor configuration for one message.
+- `msg.reset = true` clears `lowBatLock`, `consumerStates` and `lastState` before evaluating.
 
-### 5. Output Nodes (Action)
-* **Debug Node:** Connect `msg.debug_calc` to see the calculation details in the sidebar.
-* **MQTT / HTTP / Switch:** Connect `msg.payload` to the node that actually controls your physical device (0=ON, 1=OFF).
+## Input contract
 
----
+`msg.payload` must be an array of InfluxDB rows:
 
-## Architecture
+| `_field` | Meaning |
+|---|---|
+| `type_soc` | Battery SoC in %, newest row |
+| `type_forecast` | PV power in W per 15-minute UTC bin |
 
-### 1. Data Source (InfluxDB)
-The flow expects an input message containing an array of objects from an InfluxDB Flux query.
-* **Aggregation:** Data should be aggregated into 15-minute windows to optimize performance.
-* **Required Fields & Time Ranges:**
-    
-    | Field Name | Description | Needed Time Range |
-    |Str |Str |Str |
-    | :--- | :--- | :--- |
-    | `type_soc` | Battery State of Charge (%) | Current Value (last 1h) |
-    | `type_forecast` | Solar Power Forecast (W) | **History** (since sunrise) AND **Future** (next 24-48h) |
-    | `type_production` | Actual Solar Production (W) | **History** (last 2h sufficient) |
+`type_production` is not part of the contract and is ignored. If the SoC is missing or outside 0-100 %, the node outputs `ERROR_NO_DATA` / `SOC_MISSING` or `SOC_INVALID` and keeps all relays OFF.
 
-    > **Important:** The logic matches `type_production` and `type_forecast` timestamps to calculate the Damping Factor. Ensure both have the same time grid (e.g. 15-min aligned) and availability for the *past* hours of the current day.
+## Output contract
 
-### 2. Configuration (Template Node)
-Configuration is passed via `msg.config.consumer`.
+- Output 1 — C1 relay: `msg.payload` is a Boolean (`true = ON`, `false = OFF`), `msg.topic = "solar-consumer/consumer1"`.
+- Output 2 — C2 relay: same contract with `msg.topic = "solar-consumer/consumer2"`.
+- Output 3 — C3 relay: same contract with `msg.topic = "solar-consumer/consumer3"`.
+- Output 4 — diagnostic message with `msg.payload = debug_calc` (full calculation details, including `debug_calc.consumers[id]`), `msg.topic = "solar-consumer/debug"`.
 
-| Parameter | Description | Unit |
-| :--- | :--- | :--- |
-| min_soc | Critical battery level for emergency cutoff. | % |
-| soc_hysteresis | Recovery buffer above min_soc to prevents toggling. | % |
-| battery_capacity_kwh | Total capacity of the home battery. | kWh |
-| pv_peak_power_w | Maximum physical power output of the PV system. Used for sanity checks and limits. | W |
-| reserve_kwh | Safety buffer to ensure battery reaches 100%. Scaled dynamically (100% Reserve at empty battery, down to **10% (Floor)** at full battery). | kWh |
-| base_load_w | Average house consumption to subtract from solar gain. | W |
-| consumer_power_w | Power consumption of the controlled device. | W |
-| min_runtime_minutes | Minimum runtime used to calculate "Cycle Cost". | min |
-| battery_efficiency | Efficiency of the battery charging process (e.g. 0.90 for 90%). | - |
-| use_damping_factor | Enable/Disable real-time forecast correction (true/false). | - |
-| allow_battery_support | Enable/Disable draining battery. Default: true. | - |
+The consumer outputs carry only `payload` and `topic`; they do not include `consumer_states`, `debug_calc` or `influx_raw`. On a configuration error all three consumer outputs emit `false` and the debug output emits `{state: "CONFIG_ERROR", error}`.
 
----
+**Breaking change:** version 3.0.0 emits one Boolean per consumer output instead of the former combined message (`msg.payload` = cascade level `0..3`, relay bits in `msg.consumer_states`). Existing flows must connect each consumer output directly to its relay; `msg.consumer_states` is no longer available on consumer outputs.
 
-## Logic & State Machine
+## Status
 
-The logic node processes the data in the following order:
+| Color | Meaning |
+|---|---|
+| Red | Low SoC or current PV at/below base load |
+| Grey | Hysteresis lock, PV window unavailable/before/after, no current forecast point, no consumers enabled |
+| Yellow | PV window too short, all OFF with a rejection |
+| Blue | At least one relay ON and battery support active |
+| Green | At least one relay ON without battery support |
 
-### A. Data Validation (Strict)
-1.  **Configuration Check:** Validates that all configuration parameters are numbers >= 0. If any value is invalid, the script **aborts immediately** with a "Config Error".
-2.  **Payload Check:** Checks if the InfluxDB payload contains valid SoC and Forecast data.
+Shape is `dot` when at least one relay is ON, otherwise `ring`.
 
-### B. Prediction Calculation
-1.  Iterates through the forecast list (up to 24h).
-2.  Calculates **Solar Yield** - **Base Load** = **Net Surplus**.
-3.  Determines the **Surplus kWh** available above the target (Battery Capacity + Reserve, adjusted for charging efficiency).
-4.  Compares this against the **Cycle Cost** (Energy needed to run the device for `min_runtime_minutes`).
+## Read-only InfluxDB query
 
-### C. Dynamic Reserve Logic (Safety Curve)
-To balance safety (don't run out of battery) with efficiency (maximize self-consumption), the `reserve_kwh` is **not static**.
+The read-only Flux query and the InfluxDB server configuration are documented in the [node README](node-red-contrib-solar-consumer/README.md#influxdb-query-and-node-configuration).
 
-*   **Concept:**
-    *   **Low SoC:** We keep 100% of the configured reserve (Safety First).
-    *   **High SoC:** We reduce the reserve significantly (Trusting the full battery).
-    *   **Curve:** "Quadratic Safe" -> `Factor = 0.1 + 0.9 * (1 - (SoC_decimal ^ 2))`
+It reads SoC from `sonnen_live` / `pv` / `USOC` (last 30 minutes) and the forecast from `fusionForecastData` / `dwd` / `global_tilted_irradianceN` (raw 15-minute bins). There is no `type_production` stream and no InfluxDB write.
 
-*   **Examples:**
-    *   **0% SoC:** 100% of Configured Reserve.
-    *   **50% SoC:** ~78% of Configured Reserve.
-    *   **80% SoC:** ~42% of Configured Reserve.
-    *   **100% SoC:** 10% of Configured Reserve (Minimum Floor).
+## Tests
 
-### D. Real-Time Correction (Damping Factor)
-Before making decisions, the script compares the **Forecast** vs. **Actual Production** from recent history (e.g. last 2 hours).
+```bash
+# Unit + integration
+docker compose -f docker/docker-compose.test.yml build tests
+docker compose -f docker/docker-compose.test.yml up --abort-on-container-exit --exit-code-from tests tests
 
-*   **Goal:** Detect if the day is persistently better or worse than predicted (e.g., unexpected fog or clear sky).
-*   **Logic:**
-    1.  Sum up all historical forecast values (last 2h).
-    2.  Sum up all actual production values for the same timepoints.
-    3.  Calculate `Factor = Sum(Actual) / Sum(Forecast)`.
-    4.  **Clamp:** The factor is limited to a safety range (e.g., **0.75x** to **1.50x**) to prevent extreme distortion.
-    5.  **Apply (Decaying Influence):** The damping factor is applied to the forecast curve with a **time-based decay** (Half-Life: 1h).
-        *   **Why?** Weather anomalies (like a passing cloud or morning fog) are often temporary.
-        *   **Concept:**
-            *   **Short-Term (0-1h):** We trust our *local* 'Live-Correction' fully. If it's foggy now, it will likely be foggy in 30 mins.
-            *   **Long-Term (2h+):** We trust the *global* 'Weather Forecast' again. The fog will likely clear up, and the original prediction becomes valid again.
-        *   **Effect:**
-            *   **Now (0h):** 100% Influence.
-            *   **+1h:** 50% Influence.
-            *   **+2h:** 25% Influence.
-            *   **+4h:** ~6% Influence (Back to original Forecast).
-    6.  **Weighted History** The comparison of *historical* data (Forecast vs. Production) also uses **time-based decay** (Half-Life: 1h).
-        *   **Why?** To react faster to changing weather (e.g. fog clearing). Data from 2 hours ago is faded out to prioritize the current trend.
-    7.  **Threshold:** This correction is only applied if the accumulated forecast energy exceeds **3% of the PV Peak Power** (to avoid mathematical noise at dawn/dusk).
-    8.  **Physical Limit:** The adjusted forecast value is capped at `pv_peak_power_w` to ensure values remain within realistic system limits.
+# E2E with isolated test InfluxDB
+docker compose -f docker/docker-compose.test.yml up --build --abort-on-container-exit --exit-code-from e2e e2e
+docker compose -f docker/docker-compose.test.yml down -v
 
-### E. Safety & Decision Rules
-The final switch state is determined by this priority list:
+# Production image
+docker compose -f docker/docker-compose.yml build nodered
+```
 
-1.  **Low Battery Cutoff (Color: RED):**
-    * If SoC <= min_soc, the device is forced **OFF**.
-2.  **Hysteresis Recovery (Color: BLUE):
-    * If the device was previously **OFF** and the battery is charging, it remains **OFF** until SoC >= (min_soc + soc_hysteresis).
-3.  **Safety Guard (Color: BLACK):
-    * If **remaining usable sun hours** (where generation > base load) are less than **2x min_runtime**, the device is forced **OFF**.
-4.  **Surplus Decision (Color: GREEN):**
-    *   **Primary Check:** Is the predicted *Total Daily Surplus* >= Cycle Cost?
-    *   **Secondary Check (Cloud Buffer Logic):** Even if daily surplus is high, we check if we can run *NOW* without crashing the battery.
-        *   **Risk:** If we turn ON now, but the sun is weak and the battery is low, we might hit `min_soc` before the cycle finishes.
-        *   **Rule:** Only allow switching OFF if:
-            1.  Current Solar Power is **NOT** enough to run the device (we are draining battery)
-            2.  **AND** Battery is below our `SAFE_BUFFER_SOC` (we don't have a buffer to drain)
-        *   **Otherwise (Switch ON):**
-            *   **Full Power:** Forecast > (Base Load + Consumer) -> **ON**.
-            *   **Battery Support:** Forecast > Base Load -> **ON** (Draining Battery slightly, but using Solar).
+Local tests (Node.js only):
 
-6.  **No Surplus (Color: YELLOW):**
-    *   If the Total Daily Surplus is insufficient, the device is switched **OFF**.
-
----
-
-
-### Examples: How `SAFE_BUFFER_SOC` is calculated
-The buffer's main goal is to ensure the battery can **survive at least one full operation cycle** (min_runtime) without falling below the critical limit. We take the larger of "Cycle Cost" or "Hysteresis".
-
-**Formula:** `SAFE_BUFFER_SOC = min_soc + MAX(soc_hysteresis, required_cycle_soc)`
-
-#### Case A: Hysteresis is dominant (Small Load)
-*   `min_soc` = 30%
-*   `soc_hysteresis` = 20%
-*   `cycle_cost` = 1.5 kWh (approx 15% of a 10kWh battery)
-*   **Result:** 30% + MAX(20%, 15%) = 30% + 20% = **50%**
-
-#### Case B: Cycle Cost is dominant (Heavy Consumer)
-*   `min_soc` = 30%
-*   `soc_hysteresis` = 10%
-*   `cycle_cost` = 3.0 kWh (30% of a 10kWh battery)
-*   **Result:** 30% + MAX(10%, 30%) = 30% + 30% = **60%**
-
----
-
-## Status Codes (Visual Indicators)
-
-The Node-RED status dot provides immediate visual feedback:
-
-| Color | Status | Meaning |
-| :--- | :--- | :--- |
-| **RED** | CRITICAL | **Hard Cutoff.** Battery is below min_soc. |
-| **BLUE** | WAITING | **Charging.** Battery is above minimum but has not reached the recovery target (+20%) yet. |
-| **BLACK**| SAFETY | **Data Issue.** Remaining usable sun too short (< 2x min_runtime). |
-| **GREEN**| ON | **Active.** Sufficient solar surplus calculated. |
-| **YELLOW**| OFF | **Low Surplus.** System is healthy, but not enough sun to run the device. |
-| **GREY (Dot)** | ERROR | **No Data.** InfluxDB query returned no valid payload. |
-| **GREY (Ring)** | CONFIG | **Config Error.** Invalid configuration values detected (not a number or negative). Script execution aborted. |
-
----
-
-## Outputs
-
-### msg.payload (Switch Signal)
-The node uses **Active Low** logic (or specific logic defined in your setup):
-* 0 = **ON** (Enable Consumer)
-* 1 = **OFF** (Disable Consumer)
-
-### msg.debug_calc (Debugging)
-A JSON object containing the full calculation details for the sidebar:
-```json
-{
-  "state": "CALCULATED",
-  "soc": 45.5,
-  "config_used": { ... },
-  "low_bat_lock_active": false,
-  "hysteresis_recovery_target": 50,
-  "current_forecast_w": 1500,
-  "damping_factor": "1.02",
-  "past_analysis": "Matches:4 | Prod:1200 vs Fcst:1176 (OK)",
-  "solar_gain_kwh": 5.2,
-  "base_loss_kwh": 1.1,
-  "surplus_kwh": 1.5,
-  "required_cycle_kwh": 2.1,
-  "required_cycle_soc_pct": 12.0,
-  "cutoff_reason": "",
-  "remaining_sun_hours": 6.5,
-  "dynamic_reserve_kwh": 0.5
-}
+```bash
+cd node_red/node-red-contrib-solar-consumer
+npm install
+npm test
+```

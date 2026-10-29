@@ -1,0 +1,296 @@
+[
+    {
+        "id": "example-tab",
+        "type": "tab",
+        "label": "Solar Consumer Example",
+        "disabled": false,
+        "info": "",
+        "env": []
+    },
+    {
+        "id": "example-influxdb",
+        "type": "influxdb",
+        "hostname": "influxdb",
+        "port": "8086",
+        "protocol": "http",
+        "database": "default",
+        "name": "InfluxDB (fusionForecast)",
+        "usetls": false,
+        "tls": "",
+        "influxdbVersion": "2.0",
+        "url": "http://influxdb:8086",
+        "timeout": "10",
+        "rejectUnauthorized": false
+    },
+    {
+        "id": "example-inject",
+        "type": "inject",
+        "z": "example-tab",
+        "name": "Solar Consumer Trigger",
+        "props": [
+            {
+                "p": "payload"
+            },
+            {
+                "p": "topic",
+                "vt": "str"
+            }
+        ],
+        "repeat": "1800",
+        "crontab": "",
+        "once": true,
+        "onceDelay": "5",
+        "topic": "",
+        "payload": "",
+        "payloadType": "date",
+        "x": 170,
+        "y": 180,
+        "wires": [
+            [
+                "example-influx"
+            ]
+        ]
+    },
+    {
+        "id": "example-influx",
+        "type": "influxdb in",
+        "z": "example-tab",
+        "influxdb": "example-influxdb",
+        "name": "Influx Query (read-only)",
+        "query": "// Flux query for the Node-RED \"InfluxDB Query\" node.\n//\n// Changes against the previous version (2026-10-21):\n// 1. The production stream (bucket \"sonnen_live\", field \"Production_W\",\n//    mapped to \"type_production\") was removed. The live PV meter was never\n//    evaluated by the logic node, it only added rows that could invalidate the\n//    input. Consequence: the actual PV output is no longer available for a\n//    forecast/actual comparison - it would have to be queried separately.\n//\n// 2. The SoC stream is limited to the last 30 minutes (range(start: -30m)).\n//    This window is the freshness limit of the whole system: the logic node\n//    only checks that a usable SoC value is present, the query decides which\n//    record is current. Because range() ends at now() by default, a record\n//    with a timestamp in the future is excluded as well.\n//\n// 3. group() is placed before last() in the SoC stream, so that a source with\n//    tags still delivers exactly one SoC record instead of one per tag\n//    combination.\n//\n// 4. The forecast stream is NOT resampled any more. The previous version used\n//    aggregateWindow(every: 15m, fn: mean, timeSrc: \"_stop\"). The source\n//    (Open-Meteo Minutely15) already delivers exactly one value per 15-minute\n//    interval, so the mean over the window was a no-op for the values and only\n//    shifted every timestamp by 15 minutes (interval start -> interval end).\n//    That shift made the forecast 15 minutes \"older\" than it is and moved the\n//    PV window 15 minutes too far. The raw values are now passed through 1:1.\n//    The source writes one series without tags, so there is exactly one value\n//    per timestamp (verified in the raw dump of 2026-10-21).\n//\n// 5. The forecast stream is grouped by _time and reduced with last(), so that\n//    exactly one value per timestamp reaches the logic node. If the source\n//    ever delivers several series (e.g. by adding tags), the newest value wins\n//    instead of the energy balance counting the bin twice. Without duplicates\n//    this is a no-op.\n//\n// 6. Both streams are mapped explicitly to the same four columns\n//    (_time, _measurement, _field, _value) and are grouped without a group key\n//    before the union. The old \"map(fn: (r) => ({r with _field: ...}))\" kept all\n//    tags of the source measurement, so the two streams had different schemas\n//    and union() failed with a label error.\n//\n// 7. The result is sorted by _time, so the payload order is deterministic\n//    (forecast ascending, SoC last).\n//\n// Result contract for the \"Logik\" function node:\n// - _field == \"type_soc\":      state of charge in %, newest record of the last\n//   30 minutes. If the source writes nothing in that window, no type_soc row\n//   is delivered and the logic node switches all consumers OFF.\n// - _field == \"type_forecast\": PV power in W per 15-minute bin, UTC, exactly\n//   one value per timestamp. The bin timestamp is the start of the interval as\n//   written by the source, so the bin labelled 10:00Z covers 10:00Z-10:15Z.\n//   The logic node adds the 15 minutes itself when it derives the end of the\n//   PV window.\n//\n// Note: the forecast is taken from the fusion forecast bucket without the\n// integral field. The unit/magnitude of that series (global_tilted_irradianceN\n// vs. real PV power) is still unverified and is not part of this change.\nimport \"date\"\n\n// As a precaution, we query until tomorrow morning, but later cut off in the script\nheute_start = date.truncate(t: now(), unit: 1d)\nmorgen_frueh = date.add(d: 24h, to: heute_start)\n\n// 1) State of charge: newest record of the last 30 minutes.\nsoc_stream = from(bucket: \"sonnen_live\")\n  |> range(start: -30m)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"pv\")\n  |> filter(fn: (r) => r[\"_field\"] == \"USOC\")\n  |> group()\n  |> last()\n  |> map(fn: (r) => ({_time: r._time, _measurement: \"pv\", _field: \"type_soc\", _value: float(v: r._value)}))\n\n// 2) Forecast curve (without integral); raw 15-minute values, no resampling\nforecast_stream = from(bucket: \"fusionForecastData\")\n  |> range(start: heute_start, stop: morgen_frueh)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"dwd\")\n  |> filter(fn: (r) => r[\"_field\"] == \"global_tilted_irradianceN\")\n  // One value per timestamp. If the source ever delivers several series (e.g.\n  // by adding tags), the newest one wins instead of being counted twice in\n  // the energy balance of the logic node. Without duplicates this is a no-op.\n  |> group(columns: [\"_time\"])\n  |> last()\n  |> group()\n  |> map(fn: (r) => ({_time: r._time, _measurement: \"dwd\", _field: \"type_forecast\", _value: float(v: r._value)}))\n\n// 3) Union all streams and keep only the relevant columns\nunion(tables: [soc_stream, forecast_stream])\n  |> keep(columns: [\"_time\", \"_field\", \"_value\"])\n  |> sort(columns: [\"_time\"])\n",
+        "rawOutput": false,
+        "precision": "",
+        "retentionPolicy": "",
+        "org": "fusionforecast",
+        "x": 420,
+        "y": 180,
+        "wires": [
+            [
+                "example-solar-consumer"
+            ]
+        ]
+    },
+    {
+        "id": "example-solar-consumer",
+        "type": "solar-consumer",
+        "z": "example-tab",
+        "name": "Solar Consumer Cascade",
+        "min_soc": 20,
+        "soc_hysteresis": 15,
+        "min_runtime_minutes": 30,
+        "battery_capacity_kwh": 4.5,
+        "reserve_kwh": 2,
+        "battery_efficiency": 0.85,
+        "allow_battery_support": true,
+        "max_battery_support_w": 2000,
+        "base_load_w": [
+            300,
+            301,
+            302,
+            303,
+            304,
+            305,
+            306,
+            407,
+            508,
+            509,
+            1110,
+            1111,
+            612,
+            613,
+            614,
+            515,
+            616,
+            617,
+            518,
+            519,
+            420,
+            421,
+            322,
+            323
+        ],
+        "consumers": {
+            "consumer1": {
+                "enabled": true,
+                "power_w": [
+                    600,
+                    601,
+                    602,
+                    603,
+                    604,
+                    605,
+                    606,
+                    607,
+                    608,
+                    609,
+                    10,
+                    11,
+                    612,
+                    613,
+                    614,
+                    615,
+                    616,
+                    617,
+                    618,
+                    619,
+                    620,
+                    621,
+                    622,
+                    623
+                ]
+            },
+            "consumer2": {
+                "enabled": true,
+                "power_w": [
+                    1800,
+                    1800,
+                    1800,
+                    1800,
+                    1800,
+                    1800,
+                    1800,
+                    1800,
+                    1800,
+                    1800,
+                    1800,
+                    1800,
+                    1800,
+                    1800,
+                    1800,
+                    1800,
+                    1800,
+                    1800,
+                    1800,
+                    1800,
+                    1800,
+                    1800,
+                    1800,
+                    1800
+                ]
+            },
+            "consumer3": {
+                "enabled": true,
+                "power_w": [
+                    800,
+                    800,
+                    800,
+                    800,
+                    800,
+                    800,
+                    800,
+                    800,
+                    800,
+                    800,
+                    800,
+                    800,
+                    800,
+                    800,
+                    800,
+                    800,
+                    800,
+                    800,
+                    800,
+                    800,
+                    800,
+                    800,
+                    800,
+                    800
+                ]
+            }
+        },
+        "x": 700,
+        "y": 180,
+        "wires": [
+            [
+                "example-c1-debug"
+            ],
+            [
+                "example-c2-debug"
+            ],
+            [
+                "example-c3-debug"
+            ],
+            [
+                "example-detail-debug"
+            ]
+        ]
+    },
+    {
+        "id": "example-c1-debug",
+        "type": "debug",
+        "z": "example-tab",
+        "name": "C1",
+        "active": true,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "payload",
+        "targetType": "msg",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 980,
+        "y": 260,
+        "wires": []
+    },
+    {
+        "id": "example-c2-debug",
+        "type": "debug",
+        "z": "example-tab",
+        "name": "C2",
+        "active": true,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "payload",
+        "targetType": "msg",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 980,
+        "y": 320,
+        "wires": []
+    },
+    {
+        "id": "example-c3-debug",
+        "type": "debug",
+        "z": "example-tab",
+        "name": "C3",
+        "active": true,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "payload",
+        "targetType": "msg",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 980,
+        "y": 380,
+        "wires": []
+    },
+    {
+        "id": "example-detail-debug",
+        "type": "debug",
+        "z": "example-tab",
+        "name": "Calculation Details",
+        "active": true,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "true",
+        "targetType": "full",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 980,
+        "y": 440,
+        "wires": []
+    },
+    {
+        "id": "example-note",
+        "type": "comment",
+        "z": "example-tab",
+        "name": "Solar Consumer Cascade",
+        "info": "InfluxDB is read-only. Outputs 1-3 are the relay states of C1/C2/C3 as Boolean msg.payload (true=ON, false=OFF). Output 4 is the diagnostic debug_calc. The Flux query and server configuration are documented in node_red/node-red-contrib-solar-consumer/README.md. Set the InfluxDB token and organization in the Node-RED UI; credentials are stored in the Node-RED volume.",
+        "x": 420,
+        "y": 60,
+        "wires": []
+    }
+]

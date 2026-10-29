@@ -414,9 +414,7 @@ Logs will be stored in the `logs/` directory (created automatically by `scripts/
 
 For users who want to use the forecast data to control physical devices (e.g., heating, EV charging), I provide a ready-to-use **Node-RED** flow.
 
-![Wiring](../node_red/Wiring.jpg)
-
-`[Inject] --> [Template] --> [InfluxDB] --> [Function] --> [Output]`
+`[Inject] -> [InfluxDB in (read-only)] -> [Solar Consumer Cascade] -> C1/C2/C3 + Debug`
 
 Instead of simple threshold switching, it calculates the **projected solar energy surplus** for the next 24 hours. It switches the consumer **ON** only if the surplus is sufficient to cover the runtime costs without draining the home battery below a reserved level.
 

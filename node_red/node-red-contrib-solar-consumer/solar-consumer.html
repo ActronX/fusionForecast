@@ -1,0 +1,333 @@
+<script type="text/html" data-template-name="solar-consumer">
+    <style>
+        .solar-section { margin-top: 12px; }
+        .solar-section h3 { margin-bottom: 6px; }
+        .solar-grid {
+            display: grid;
+            grid-template-columns: repeat(12, minmax(0, 1fr));
+            gap: 4px;
+            margin-top: 4px;
+        }
+        .solar-cell { display: flex; flex-direction: column; min-width: 0; }
+        .solar-cell label { font-size: 10px; color: #888; text-align: center; }
+        .solar-cell input {
+            width: 100%;
+            min-width: 0;
+            padding: 2px 4px;
+            box-sizing: border-box;
+        }
+        .solar-cell input.solar-invalid { border-color: #d9534f; background: #fff0f0; }
+        .solar-fill { display: flex; gap: 6px; align-items: center; margin: 4px 0; }
+        .solar-fill input { width: 110px; }
+        .solar-help { font-size: 12px; color: #666; line-height: 1.4; }
+        .solar-help code { background: #f4f4f4; padding: 0 3px; }
+    </style>
+
+    <div class="form-row">
+        <label for="node-input-name"><i class="fa fa-tag"></i> Name</label>
+        <input type="text" id="node-input-name" placeholder="Name">
+    </div>
+
+    <div class="solar-section">
+        <h3>Battery</h3>
+        <div class="form-row">
+            <label for="node-input-min_soc">Min SoC (%)</label>
+            <input type="number" id="node-input-min_soc" min="0" max="100" step="any">
+        </div>
+        <div class="form-row">
+            <label for="node-input-soc_hysteresis">SoC hysteresis (%)</label>
+            <input type="number" id="node-input-soc_hysteresis" min="0" max="100" step="any">
+        </div>
+        <div class="form-row">
+            <label for="node-input-min_runtime_minutes">Min runtime (minutes)</label>
+            <input type="number" id="node-input-min_runtime_minutes" min="0" step="any">
+        </div>
+        <div class="form-row">
+            <label for="node-input-battery_capacity_kwh">Battery capacity (kWh)</label>
+            <input type="number" id="node-input-battery_capacity_kwh" min="0" step="any">
+        </div>
+        <div class="form-row">
+            <label for="node-input-reserve_kwh">Reserve (kWh)</label>
+            <input type="number" id="node-input-reserve_kwh" min="0" step="any">
+        </div>
+        <div class="form-row">
+            <label for="node-input-battery_efficiency">Battery efficiency (0-1)</label>
+            <input type="number" id="node-input-battery_efficiency" min="0" max="1" step="any">
+        </div>
+        <div class="form-row">
+            <label for="node-input-max_battery_support_w">Max battery support (W)</label>
+            <input type="number" id="node-input-max_battery_support_w" min="0" step="any">
+        </div>
+        <div class="form-row">
+            <label for="node-input-allow_battery_support">Allow battery support</label>
+            <input type="checkbox" id="node-input-allow_battery_support">
+        </div>
+    </div>
+
+    <div class="solar-section">
+        <h3>Base load (24h UTC, W)</h3>
+        <div class="solar-fill">
+            <input type="number" id="solar-base-load-fill" min="0" step="any" placeholder="Fill all">
+            <button type="button" class="red-ui-button red-ui-button-small" id="solar-base-load-fill-btn">Fill all</button>
+        </div>
+        <div id="solar-base-load-grid" class="solar-grid"></div>
+    </div>
+
+    <div class="solar-section">
+        <h3>Consumer 1</h3>
+        <div class="form-row">
+            <label for="node-input-consumer1-enabled">Enabled</label>
+            <input type="checkbox" id="node-input-consumer1-enabled">
+        </div>
+        <div class="solar-fill">
+            <input type="number" id="solar-consumer1-fill" min="0" step="any" placeholder="Fill all">
+            <button type="button" class="red-ui-button red-ui-button-small" id="solar-consumer1-fill-btn">Fill all</button>
+        </div>
+        <div id="solar-consumer1-grid" class="solar-grid"></div>
+    </div>
+
+    <div class="solar-section">
+        <h3>Consumer 2</h3>
+        <div class="form-row">
+            <label for="node-input-consumer2-enabled">Enabled</label>
+            <input type="checkbox" id="node-input-consumer2-enabled">
+        </div>
+        <div class="solar-fill">
+            <input type="number" id="solar-consumer2-fill" min="0" step="any" placeholder="Fill all">
+            <button type="button" class="red-ui-button red-ui-button-small" id="solar-consumer2-fill-btn">Fill all</button>
+        </div>
+        <div id="solar-consumer2-grid" class="solar-grid"></div>
+    </div>
+
+    <div class="solar-section">
+        <h3>Consumer 3</h3>
+        <div class="form-row">
+            <label for="node-input-consumer3-enabled">Enabled</label>
+            <input type="checkbox" id="node-input-consumer3-enabled">
+        </div>
+        <div class="solar-fill">
+            <input type="number" id="solar-consumer3-fill" min="0" step="any" placeholder="Fill all">
+            <button type="button" class="red-ui-button red-ui-button-small" id="solar-consumer3-fill-btn">Fill all</button>
+        </div>
+        <div id="solar-consumer3-grid" class="solar-grid"></div>
+    </div>
+
+    <div class="solar-section">
+        <h3>Notes</h3>
+        <div class="solar-help">
+            <p><b>Input:</b> InfluxDB rows in <code>msg.payload</code> with <code>type_soc</code> and <code>type_forecast</code>.</p>
+            <p><b>Outputs 1-3:</b> relay state per consumer; <code>msg.payload</code> is a Boolean (<code>true = ON</code>, <code>false = OFF</code>) and <code>msg.topic</code> identifies the consumer.</p>
+            <p><b>Output 4:</b> diagnostic message with <code>msg.payload = debug_calc</code>.</p>
+            <p>The 24h profiles are indexed by <b>UTC hour</b> (00-23). InfluxDB is only read; this node never writes.</p>
+        </div>
+    </div>
+</script>
+
+<script type="text/html" data-help-name="solar-consumer">
+    <p>Controls a three-stage solar consumer cascade from battery SoC and PV forecast data.</p>
+    <h3>Inputs</h3>
+    <ul>
+        <li><code>msg.payload</code>: array of InfluxDB rows with <code>_time</code>, <code>_field</code>, <code>_value</code>.</li>
+        <li><code>msg.config.consumer</code> (optional): overrides the editor configuration for this message.</li>
+        <li><code>msg.reset = true</code>: clears the hysteresis/crash lock and all relay states.</li>
+    </ul>
+    <h3>Outputs</h3>
+    <ul>
+        <li>Output 1: consumer 1 relay state. <code>msg.payload</code> is a Boolean (<code>true = ON</code>, <code>false = OFF</code>), <code>msg.topic = "solar-consumer/consumer1"</code>.</li>
+        <li>Output 2: consumer 2 relay state, same contract with <code>msg.topic = "solar-consumer/consumer2"</code>.</li>
+        <li>Output 3: consumer 3 relay state, same contract with <code>msg.topic = "solar-consumer/consumer3"</code>.</li>
+        <li>Output 4: diagnostic message with <code>msg.payload = debug_calc</code>, <code>msg.topic = "solar-consumer/debug"</code>.</li>
+    </ul>
+    <h3>Configuration</h3>
+    <p>Battery limits, base-load profile and the three consumer profiles are configured in the node editor. The profiles use UTC hours 00-23. The evaluation logic lives in <code>lib/evaluate.js</code>; each consumer output emits its relay state as a Boolean <code>msg.payload</code>.</p>
+</script>
+
+<script type="text/javascript">
+    (function () {
+        "use strict";
+
+        var SOLAR_CONSUMER_DEFAULTS = {
+            min_soc: 20,
+            soc_hysteresis: 15,
+            min_runtime_minutes: 30,
+            battery_capacity_kwh: 4.5,
+            reserve_kwh: 2,
+            battery_efficiency: 0.85,
+            allow_battery_support: true,
+            max_battery_support_w: 2000,
+            base_load_w: [
+                300, 301, 302, 303, 304, 305,
+                306, 407, 508, 509, 1110, 1111,
+                612, 613, 614, 515, 616, 617,
+                518, 519, 420, 421, 322, 323
+            ],
+            consumers: {
+                consumer1: {
+                    enabled: true,
+                    power_w: [
+                        600, 601, 602, 603, 604, 605, 606, 607, 608, 609, 10, 11,
+                        612, 613, 614, 615, 616, 617, 618, 619, 620, 621, 622, 623
+                    ]
+                },
+                consumer2: { enabled: true, power_w: new Array(24).fill(1800) },
+                consumer3: { enabled: true, power_w: new Array(24).fill(800) }
+            }
+        };
+
+        function normalizeProfile(value, fallback) {
+            if (Array.isArray(value) && value.length === 24) {
+                return value.map(function (item) {
+                    var num = Number(item);
+                    return Number.isFinite(num) && num >= 0 ? num : 0;
+                });
+            }
+            if (value !== undefined && value !== null && !Array.isArray(value)) {
+                var single = Number(value);
+                if (Number.isFinite(single) && single >= 0) return new Array(24).fill(single);
+            }
+            return fallback.slice();
+        }
+
+        function normalizeConsumers(value, fallback) {
+            var result = {};
+            ["consumer1", "consumer2", "consumer3"].forEach(function (id) {
+                var source = value && value[id] ? value[id] : {};
+                var fallbackConsumer = fallback[id];
+                result[id] = {
+                    enabled: source.enabled !== undefined ? !!source.enabled : fallbackConsumer.enabled,
+                    power_w: normalizeProfile(source.power_w, fallbackConsumer.power_w)
+                };
+            });
+            return result;
+        }
+
+        function buildGrid(selector, values, prefix) {
+            var $grid = $(selector).empty();
+            for (var hour = 0; hour < 24; hour++) {
+                var $cell = $("<div>").addClass("solar-cell");
+                var $label = $("<label>").text(String(hour).padStart(2, "0"));
+                var $input = $("<input>")
+                    .attr("type", "number")
+                    .attr("min", "0")
+                    .attr("step", "any")
+                    .attr("id", prefix + "-" + hour)
+                    .val(values[hour]);
+                $input.on("input", function () {
+                    var num = Number($(this).val());
+                    $(this).toggleClass("solar-invalid", !Number.isFinite(num) || num < 0);
+                });
+                $cell.append($label).append($input);
+                $grid.append($cell);
+            }
+        }
+
+        function readGrid(prefix) {
+            var values = [];
+            for (var hour = 0; hour < 24; hour++) {
+                var $input = $("#" + prefix + "-" + hour);
+                var num = Number($input.val());
+                if (!Number.isFinite(num) || num < 0) {
+                    $input.addClass("solar-invalid");
+                    values.push(null);
+                } else {
+                    $input.removeClass("solar-invalid");
+                    values.push(num);
+                }
+            }
+            return values;
+        }
+
+        function fillGrid(prefix, value) {
+            var num = Number(value);
+            if (!Number.isFinite(num) || num < 0) return;
+            for (var hour = 0; hour < 24; hour++) {
+                $("#" + prefix + "-" + hour).val(num).removeClass("solar-invalid");
+            }
+        }
+
+        RED.nodes.registerType("solar-consumer", {
+            category: "solar",
+            color: "#f5b800",
+            defaults: {
+                name: { value: "" },
+                min_soc: { value: SOLAR_CONSUMER_DEFAULTS.min_soc, validate: RED.validators.number() },
+                soc_hysteresis: { value: SOLAR_CONSUMER_DEFAULTS.soc_hysteresis, validate: RED.validators.number() },
+                min_runtime_minutes: { value: SOLAR_CONSUMER_DEFAULTS.min_runtime_minutes, validate: RED.validators.number() },
+                battery_capacity_kwh: { value: SOLAR_CONSUMER_DEFAULTS.battery_capacity_kwh, validate: RED.validators.number() },
+                reserve_kwh: { value: SOLAR_CONSUMER_DEFAULTS.reserve_kwh, validate: RED.validators.number() },
+                battery_efficiency: { value: SOLAR_CONSUMER_DEFAULTS.battery_efficiency, validate: RED.validators.number() },
+                allow_battery_support: { value: SOLAR_CONSUMER_DEFAULTS.allow_battery_support },
+                max_battery_support_w: { value: SOLAR_CONSUMER_DEFAULTS.max_battery_support_w, validate: RED.validators.number() },
+                base_load_w: { value: SOLAR_CONSUMER_DEFAULTS.base_load_w },
+                consumers: { value: SOLAR_CONSUMER_DEFAULTS.consumers }
+            },
+            inputs: 1,
+            outputs: 4,
+            icon: "font-awesome/fa-sun-o",
+            paletteLabel: "Solar Consumer Cascade",
+            outputLabels: ["C1", "C2", "C3", "Debug"],
+            label: function () {
+                return this.name || "Solar Consumer Cascade";
+            },
+            oneditprepare: function () {
+                var defaults = SOLAR_CONSUMER_DEFAULTS;
+                var baseLoad = normalizeProfile(this.base_load_w, defaults.base_load_w);
+                var consumers = normalizeConsumers(this.consumers, defaults.consumers);
+
+                $("#node-input-min_soc").val(this.min_soc !== undefined ? this.min_soc : defaults.min_soc);
+                $("#node-input-soc_hysteresis").val(this.soc_hysteresis !== undefined ? this.soc_hysteresis : defaults.soc_hysteresis);
+                $("#node-input-min_runtime_minutes").val(this.min_runtime_minutes !== undefined ? this.min_runtime_minutes : defaults.min_runtime_minutes);
+                $("#node-input-battery_capacity_kwh").val(this.battery_capacity_kwh !== undefined ? this.battery_capacity_kwh : defaults.battery_capacity_kwh);
+                $("#node-input-reserve_kwh").val(this.reserve_kwh !== undefined ? this.reserve_kwh : defaults.reserve_kwh);
+                $("#node-input-battery_efficiency").val(this.battery_efficiency !== undefined ? this.battery_efficiency : defaults.battery_efficiency);
+                $("#node-input-max_battery_support_w").val(this.max_battery_support_w !== undefined ? this.max_battery_support_w : defaults.max_battery_support_w);
+                $("#node-input-allow_battery_support").prop("checked", this.allow_battery_support !== undefined ? this.allow_battery_support : defaults.allow_battery_support);
+
+                buildGrid("#solar-base-load-grid", baseLoad, "solar-base-load");
+                buildGrid("#solar-consumer1-grid", consumers.consumer1.power_w, "solar-consumer1");
+                buildGrid("#solar-consumer2-grid", consumers.consumer2.power_w, "solar-consumer2");
+                buildGrid("#solar-consumer3-grid", consumers.consumer3.power_w, "solar-consumer3");
+
+                $("#node-input-consumer1-enabled").prop("checked", consumers.consumer1.enabled);
+                $("#node-input-consumer2-enabled").prop("checked", consumers.consumer2.enabled);
+                $("#node-input-consumer3-enabled").prop("checked", consumers.consumer3.enabled);
+
+                $("#solar-base-load-fill-btn").on("click", function (event) {
+                    event.preventDefault();
+                    fillGrid("solar-base-load", $("#solar-base-load-fill").val());
+                });
+                ["consumer1", "consumer2", "consumer3"].forEach(function (id) {
+                    $("#solar-" + id + "-fill-btn").on("click", function (event) {
+                        event.preventDefault();
+                        fillGrid("solar-" + id, $("#solar-" + id + "-fill").val());
+                    });
+                });
+            },
+            oneditsave: function () {
+                this.min_soc = Number($("#node-input-min_soc").val());
+                this.soc_hysteresis = Number($("#node-input-soc_hysteresis").val());
+                this.min_runtime_minutes = Number($("#node-input-min_runtime_minutes").val());
+                this.battery_capacity_kwh = Number($("#node-input-battery_capacity_kwh").val());
+                this.reserve_kwh = Number($("#node-input-reserve_kwh").val());
+                this.battery_efficiency = Number($("#node-input-battery_efficiency").val());
+                this.max_battery_support_w = Number($("#node-input-max_battery_support_w").val());
+                this.allow_battery_support = $("#node-input-allow_battery_support").prop("checked");
+                this.base_load_w = readGrid("solar-base-load");
+                this.consumers = {
+                    consumer1: {
+                        enabled: $("#node-input-consumer1-enabled").prop("checked"),
+                        power_w: readGrid("solar-consumer1")
+                    },
+                    consumer2: {
+                        enabled: $("#node-input-consumer2-enabled").prop("checked"),
+                        power_w: readGrid("solar-consumer2")
+                    },
+                    consumer3: {
+                        enabled: $("#node-input-consumer3-enabled").prop("checked"),
+                        power_w: readGrid("solar-consumer3")
+                    }
+                };
+            }
+        });
+    })();
+</script>

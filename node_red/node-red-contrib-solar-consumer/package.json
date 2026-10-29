@@ -1,7 +1,7 @@
 {
     "name": "node-red-contrib-solar-consumer",
-    "version": "1.0.0",
-    "description": "Smart Solar Consumer – Intelligent load switching based on battery SoC, solar forecast, and energy surplus calculation with damping factor support.",
+    "version": "3.0.0",
+    "description": "Three-stage solar consumer cascade based on battery SoC, PV forecast and household load profiles.",
     "keywords": [
         "node-red",
         "solar",
@@ -11,17 +11,37 @@
         "energy",
         "forecast",
         "soc",
-        "smart-home"
+        "smart-home",
+        "cascade"
     ],
     "license": "MIT",
     "node-red": {
-        "version": ">=2.0.0",
+        "version": ">=3.0.0",
         "nodes": {
             "solar-consumer": "solar-consumer.js"
         }
     },
     "author": "fusionForecast",
     "engines": {
-        "node": ">=14.0.0"
+        "node": ">=18.0.0"
+    },
+    "files": [
+        "solar-consumer.js",
+        "solar-consumer.html",
+        "lib/",
+        "README.md",
+        "LICENSE"
+    ],
+    "scripts": {
+        "test": "npm run test:unit && npm run test:integration",
+        "test:unit": "node --test test/unit/config.test.js test/unit/evaluate.test.js",
+        "test:integration": "node --test test/integration/solar-consumer.test.js",
+        "test:readonly": "node test/e2e/assert-readonly-flow.js",
+        "test:e2e": "node test/e2e/run.js"
+    },
+    "devDependencies": {
+        "@influxdata/influxdb-client": "^1.33.2",
+        "node-red": "^4.0.0",
+        "node-red-node-test-helper": "^0.3.4"
     }
 }

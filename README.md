@@ -151,20 +151,25 @@ For a detailed description of the scripts and data flow, please refer to the **[
 
 # Smart Consumer Control (Node-RED)
 
-For users who want to use the forecast data to control physical devices (e.g., heating, EV charging), I provide a ready-to-use **Node-RED** flow.
+For users who want to use the forecast data to control physical devices (e.g., heating, EV charging), the repository ships a ready-to-use **Node-RED** custom node and flow.
 
-![Wiring](node_red/Wiring.jpg)
+```text
+[Inject] -> [InfluxDB in (read-only)] -> [Solar Consumer Cascade] -> [Relay C1/C2/C3]
+```
 
-`[Inject] --> [Template] --> [InfluxDB] --> [Function] --> [Output]`
+The node evaluates a three-stage cascade (C1–C3) from battery SoC and PV forecast rows. It calculates the projected energy surplus, a dynamic reserve, and the maximum allowed battery support, then switches the cascade stages in order.
 
-Instead of simple threshold switching, it calculates the **projected solar energy surplus** for the next 24 hours. It switches the consumer **ON** only if the surplus is sufficient to cover the runtime costs without draining the home battery below a reserved level.
+Protection features:
 
-It includes advanced protection features:
-* **Hysteresis:** Prevents rapid toggling ("flip-flopping") by requiring a specific charge level recovery.
-* **Dynamic Reserve:** Maintains a high safety buffer when battery is low, but reduces it when battery is full to maximize capacity usage.
-* **Safety Guard:** Prevents operation if forecast data is incomplete or outdated.
-* **Real-Time Forecast Correction:** Dynamically adjusts the forecast curve ("Damping Factor") based on the actual solar performance since sunrise. If the day is cloudier/sunnier than predicted, the future forecast is scaled accordingly.
-* **Battery Protection:** Hard cutoff when SoC is critically low.
+* **Hysteresis:** Prevents rapid toggling by requiring a specific charge-level recovery.
+* **Dynamic Reserve:** Keeps a higher reserve at low SoC and reduces it at high SoC.
+* **PV window guard:** Only operates while the forecast provides usable PV time.
+* **Battery support limit:** Rejects stages that would require grid import above `max_battery_support_w`.
+* **Fail-safe:** All relays switch OFF on unexpected errors; InfluxDB is read-only.
+
+The node configuration is edited directly in the node editor. The example flow is
+[`node_red/example-flow.json`](node_red/example-flow.json); the evaluation logic lives in
+[`lib/evaluate.js`](node_red/node-red-contrib-solar-consumer/lib/evaluate.js).
 
 👉 **[Read the full Node-RED Logic Documentation](node_red/README.md)**
 

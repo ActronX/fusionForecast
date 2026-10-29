@@ -69,4 +69,5 @@ def load_config(config_path="settings.toml"):
 
 # Load config once when module is imported
 # Users of this module can import 'settings' directly
-settings = load_config()
+config_file = os.environ.get("CONFIG_PATH", "settings.toml")
+settings = load_config(config_path=config_file)
